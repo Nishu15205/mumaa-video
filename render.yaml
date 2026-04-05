@@ -3,10 +3,11 @@ services:
   - type: web
     name: mumaa-socket
     plan: free
-    env: docker
+    env: node
     region: singapore
     rootDir: mini-services/socket-service
-    dockerfilePath: ./Dockerfile
+    buildCommand: npm install
+    startCommand: npx tsx index.ts
     envVars:
       - key: PORT
         value: 10000
@@ -20,9 +21,10 @@ services:
   - type: web
     name: mumaa-web
     plan: free
-    env: docker
+    env: node
     region: singapore
-    dockerfilePath: ./Dockerfile
+    buildCommand: npm install && npm run build
+    startCommand: node .next/standalone/server.js
     envVars:
       - key: NODE_ENV
         value: production
