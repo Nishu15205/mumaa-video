@@ -1,11 +1,4 @@
 services:
-  # ─── PostgreSQL Database (Managed) ──────────────────
-  - type: psql
-    name: mumaa-db
-    plan: starter
-    region: singapore
-    ipAllowList: []  # Allow internal connections only
-
   # ─── Socket.IO Signaling Server ─────────────────────
   - type: web
     name: mumaa-socket
@@ -38,10 +31,7 @@ services:
       - key: HOSTNAME
         value: 0.0.0.0
       - key: DATABASE_URL
-        fromService:
-          name: mumaa-db
-          type: psql
-          property: connectionString
+        sync: false
       - key: NEXT_PUBLIC_SOCKET_URL
         fromService:
           name: mumaa-socket
