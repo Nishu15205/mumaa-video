@@ -1,17 +1,20 @@
-FROM oven/bun:1-alpine
+FROM node:20-alpine
 WORKDIR /app
 
 # Copy package files
-COPY package.json bun.lock ./
+COPY package.json ./
 
-# Install dependencies
-RUN bun install --frozen-lockfile || bun install
+# Install dependencies (no bun.lock needed - use npm for Node.js)
+RUN npm install
 
 # Copy source
 COPY index.ts ./
 
-# Expose port
+# Install tsx for running TypeScript
+RUN npm install -g tsx
+
+# Expose port (Render sets PORT env var)
 EXPOSE 10000
 
-# Start server
-CMD ["bun", "run", "index.ts"]
+# Start server using tsx
+CMD ["npx", "tsx", "index.ts"]

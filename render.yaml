@@ -1,0 +1,88 @@
+services:
+  # ─── PostgreSQL Database ──────────────────────────────
+  - type: pserv
+    name: mumaa-db
+    plan: starter
+    env: docker
+    region: singapore
+    initialDeployHook: echo "Database ready"
+    envVars:
+      - key: POSTGRES_USER
+        sync: false
+      - key: POSTGRES_PASSWORD
+        generateValue: true
+      - key: POSTGRES_DB
+        value: mumaa
+
+  # ─── Socket.IO Signaling Server ─────────────────────
+  - type: web
+    name: mumaa-socket
+    plan: free
+    env: docker
+    region: singapore
+    rootDir: mini-services/socket-service
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: CORS_ORIGIN
+        fromService:
+          name: mumaa-web
+          type: web
+          property: hostport
+
+  # ─── Next.js Web Application ─────────────────────────
+  - type: web
+    name: mumaa-web
+    plan: free
+    env: docker
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    buildCommand: npx prisma generate
+    startCommand: node .next/standalone/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: HOSTNAME
+        value: 0.0.0.0
+      - key: DATABASE_URL
+        fromService:
+          name: mumaa-db
+          type: pserv
+          property: hostport
+      - key: NEXT_PUBLIC_SOCKET_URL
+        fromService:
+          name: mumaa-socket
+          type: web
+          property: hostport
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+      - key: NEXTAUTH_URL
+        fromService:
+          name: mumaa-web
+          type: web
+          property: hostport
+      - key: JWT_SECRET
+        generateValue: true
+      - key: NEXT_PUBLIC_TURN_URL
+        sync: false
+      - key: NEXT_PUBLIC_TURN_USERNAME
+        sync: false
+      - key: NEXT_PUBLIC_TURN_CREDENTIAL
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
