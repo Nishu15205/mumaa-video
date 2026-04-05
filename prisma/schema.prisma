@@ -1,0 +1,188 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  password      String
+  role          String   @default("PARENT") // PARENT, NANNY, ADMIN
+  phone         String?
+  avatar        String?
+  bio           String?
+  isOnline      Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  nannyProfile  NannyProfile?
+  parentProfile ParentProfile?
+  parentCalls   CallSession[] @relation("CallParent")
+  nannyCalls    CallSession[] @relation("CallNanny")
+  reviewsGiven  Review[] @relation("ReviewFrom")
+  reviewsReceived Review[] @relation("ReviewTo")
+  subscriptions Subscription[]
+  notifications Notification[]
+  pushSubscriptions PushSubscription[]
+  approvedApplications NannyApplication[] @relation("ApprovedNanny")
+  paymentsSent  PaymentRecord[] @relation("PaymentSender")
+  paymentsReceived PaymentRecord[] @relation("PaymentReceiver")
+}
+
+model NannyProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  experience    Int      @default(0)
+  skills        String   @default("") // comma separated
+  hourlyRate    Float    @default(0)
+  isAvailable   Boolean  @default(false)
+  rating        Float    @default(0)
+  totalSessions Int      @default(0)
+  totalEarnings Float    @default(0)
+  paidEarnings  Float    @default(0) // earnings paid by admin
+  languages     String   @default("")
+  certifications String  @default("")
+  ageGroup      String   @default("")
+  // Bank Details for payment
+  bankName      String   @default("")
+  accountNumber String   @default("")
+  ifscCode      String   @default("")
+  accountHolder String   @default("")
+  upiId         String   @default("")
+ createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ParentProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  childrenCount Int      @default(0)
+  childrenAges  String   @default("")
+  preferences   String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CallSession {
+  id            String   @id @default(cuid())
+  parentId      String
+  nannyId       String
+  type          String   @default("INSTANT") // INSTANT, SCHEDULED
+  status        String   @default("PENDING") // PENDING, ACCEPTED, ACTIVE, COMPLETED, CANCELLED, NO_SHOW
+  scheduledAt   DateTime?
+  startedAt     DateTime?
+  endedAt       DateTime?
+  duration      Int      @default(0) // in seconds
+  price         Float    @default(0)
+  notes         String?
+  callRoomId    String?
+  rating        Float?
+  reviewComment String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  parent        User     @relation("CallParent", fields: [parentId], references: [id])
+  nanny         User     @relation("CallNanny", fields: [nannyId], references: [id])
+  reviews       Review[]
+}
+
+model Subscription {
+  id                String   @id @default(cuid())
+  userId            String
+  plan              String   @default("FREE") // FREE, BASIC, PRO
+  status            String   @default("ACTIVE") // ACTIVE, EXPIRED, CANCELLED
+  isTrial           Boolean  @default(false)
+  trialEndsAt       DateTime?
+  currentPeriodEnds DateTime?
+  callsUsedToday    Int      @default(0) // for BASIC plan daily tracking
+  lastCallReset     DateTime? // when callsUsedToday was last reset
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Review {
+  id            String   @id @default(cuid())
+  callSessionId String
+  fromUserId    String
+  toUserId      String
+  rating        Float
+  comment       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  callSession   CallSession @relation(fields: [callSessionId], references: [id])
+  fromUser      User        @relation("ReviewFrom", fields: [fromUserId], references: [id])
+  toUser        User        @relation("ReviewTo", fields: [toUserId], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // CALL_REQUEST, CALL_SCHEDULED, CALL_COMPLETED, SUBSCRIPTION, SYSTEM, NANNY_APPLICATION
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  data      String?  // JSON string for extra data
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model NannyApplication {
+  id            String   @id @default(cuid())
+  email         String
+  name          String
+  phone         String?
+  experience    Int      @default(0)
+  skills        String   @default("")
+  hourlyRate    Float    @default(0)
+  languages     String   @default("")
+  certifications String  @default("")
+  bio           String?
+  status        String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  reviewedBy    String?  // admin userId
+  reviewedAt    DateTime?
+  rejectReason  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  approvedUser  User?    @relation("ApprovedNanny", fields: [approvedUserId], references: [id])
+  approvedUserId String? @unique
+}
+
+model PaymentRecord {
+  id            String   @id @default(cuid())
+  nannyId       String
+  amount        Float
+  method        String   @default("MANUAL") // MANUAL, UPI, BANK_TRANSFER
+  note          String?
+  callIds       String?  // JSON array of call session IDs covered
+  paidBy        String   // admin userId
+  createdAt     DateTime @default(now())
+
+  nanny         User     @relation("PaymentReceiver", fields: [nannyId], references: [id])
+  admin         User     @relation("PaymentSender", fields: [paidBy], references: [id])
+}
