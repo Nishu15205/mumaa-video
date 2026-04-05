@@ -1,39 +1,30 @@
-FROM node:22-alpine AS base
+FROM node:22-alpine
 
-# ─── Dependencies ────────────────────────────────────
-FROM base AS deps
-RUN apk add --no-cache libc6-compat
+# System deps for native modules (sharp, etc.)
+RUN apk add --no-cache libc6-compat vips-dev
+
 WORKDIR /app
+
+# Copy package files first (layer caching)
 COPY package.json ./
-RUN npm install
 
-# ─── Build ───────────────────────────────────────────
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+# Install ALL dependencies (dev + prod needed for build)
+RUN npm install --legacy-peer-deps
+
+# Copy source code
 COPY . .
 
-# Use local prisma (v6) - NOT npx which downloads latest
-RUN node_modules/.bin/prisma generate
+# Generate Prisma client using LOCAL binary (v6 pinned, NOT npx)
+RUN ./node_modules/.bin/prisma generate
+
+# Build Next.js
+ENV NODE_OPTIONS=--max-old-space-size=384
 RUN npm run build
 
-# ─── Production ─────────────────────────────────────
-FROM node:22-alpine AS runner
-WORKDIR /app
+# Production settings
 ENV NODE_ENV=production
-
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-
-USER nextjs
-EXPOSE 10000
 ENV PORT=10000
-ENV HOSTNAME=0.0.0.0
+EXPOSE 10000
 
-CMD ["node", "server.js"]
+# Start Next.js
+CMD ["npx", "next", "start", "-H", "0.0.0.0"]

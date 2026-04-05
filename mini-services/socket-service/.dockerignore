@@ -1,6 +1,4 @@
 node_modules
-*.db
-*.db-journal
-.env
-.env.local
-.git
+bun.lock
+.env*
+*.log

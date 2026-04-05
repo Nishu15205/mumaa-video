@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+db
+upload
+*.log
+.env*
+!.env.example
+bun.lock
+.nvmrc
+mini-services

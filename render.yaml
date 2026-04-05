@@ -3,11 +3,10 @@ services:
   - type: web
     name: mumaa-socket
     plan: free
-    env: node
+    env: docker
     region: singapore
     rootDir: mini-services/socket-service
-    buildCommand: npm install --legacy-peer-deps
-    startCommand: npx tsx index.ts
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: PORT
         value: 10000
@@ -21,17 +20,10 @@ services:
   - type: web
     name: mumaa-web
     plan: free
-    env: node
+    env: docker
     region: singapore
-    buildCommand: npm install --legacy-peer-deps && npm run build
-    startCommand: npm start
+    dockerfilePath: ./Dockerfile
     envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: 10000
-      - key: HOSTNAME
-        value: 0.0.0.0
       - key: DATABASE_URL
         sync: false
       - key: NEXT_PUBLIC_SOCKET_URL
