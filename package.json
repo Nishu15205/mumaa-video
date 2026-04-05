@@ -7,8 +7,8 @@
   },
   "scripts": {
     "dev": "cd mini-services/socket-service && (bun index.ts &) && cd ../.. && next dev -p 3000 2>&1 | tee dev.log",
-    "build": "npx prisma generate && next build",
-    "start": "npx prisma generate && NODE_ENV=production node .next/standalone/server.js",
+    "build": "prisma generate && next build",
+    "start": "NODE_ENV=production node .next/standalone/server.js",
     "lint": "eslint .",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
@@ -16,6 +16,9 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

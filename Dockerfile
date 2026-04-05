@@ -12,7 +12,9 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN ./node_modules/.bin/prisma generate
+
+# Use local prisma (v6) - NOT npx which downloads latest
+RUN node_modules/.bin/prisma generate
 RUN npm run build
 
 # ─── Production ─────────────────────────────────────
