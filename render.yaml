@@ -6,7 +6,7 @@ services:
     env: node
     region: singapore
     rootDir: mini-services/socket-service
-    buildCommand: npm install
+    buildCommand: npm install --legacy-peer-deps
     startCommand: npx tsx index.ts
     envVars:
       - key: PORT
@@ -23,8 +23,8 @@ services:
     plan: free
     env: node
     region: singapore
-    buildCommand: npm install && npm run build
-    startCommand: node .next/standalone/server.js
+    buildCommand: npm install --legacy-peer-deps && npm run build
+    startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
