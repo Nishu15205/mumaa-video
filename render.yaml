@@ -1,18 +1,10 @@
 services:
-  # ─── PostgreSQL Database ──────────────────────────────
-  - type: pserv
+  # ─── PostgreSQL Database (Managed) ──────────────────
+  - type: psql
     name: mumaa-db
     plan: starter
-    env: docker
     region: singapore
-    initialDeployHook: echo "Database ready"
-    envVars:
-      - key: POSTGRES_USER
-        sync: false
-      - key: POSTGRES_PASSWORD
-        generateValue: true
-      - key: POSTGRES_DB
-        value: mumaa
+    ipAllowList: []  # Allow internal connections only
 
   # ─── Socket.IO Signaling Server ─────────────────────
   - type: web
@@ -38,8 +30,6 @@ services:
     env: docker
     region: singapore
     dockerfilePath: ./Dockerfile
-    buildCommand: npx prisma generate
-    startCommand: node .next/standalone/server.js
     envVars:
       - key: NODE_ENV
         value: production
@@ -50,8 +40,8 @@ services:
       - key: DATABASE_URL
         fromService:
           name: mumaa-db
-          type: pserv
-          property: hostport
+          type: psql
+          property: connectionString
       - key: NEXT_PUBLIC_SOCKET_URL
         fromService:
           name: mumaa-socket
