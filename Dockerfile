@@ -1,22 +1,21 @@
-FROM node:20-alpine AS base
+FROM oven/bun:1 AS base
 
 # ─── Dependencies ────────────────────────────────────
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
 WORKDIR /app
-COPY package.json package-lock.json* bun.lock ./
-RUN npm ci --ignore-scripts || yarn install --frozen-lockfile --ignore-scripts
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --ignore-scripts
 
 # ─── Build ───────────────────────────────────────────
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npx prisma generate
-RUN npm run build
+RUN bunx prisma generate
+RUN bun run build
 
 # ─── Production ─────────────────────────────────────
-FROM base AS runner
+FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
@@ -28,9 +27,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 
+# Install prisma CLI for migrations at runtime
+RUN npm install -g prisma
+
 USER nextjs
 EXPOSE 10000
 ENV PORT=10000
 ENV HOSTNAME=0.0.0.0
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node server.js"]
+CMD ["sh", "-c", "prisma migrate deploy 2>/dev/null; node server.js"]
