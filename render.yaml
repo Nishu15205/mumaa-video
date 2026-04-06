@@ -6,10 +6,9 @@ services:
     env: docker
     region: singapore
     rootDir: mini-services/socket-service
-    dockerfilePath: ./Dockerfile
     envVars:
       - key: PORT
-        value: 10000
+        value: "10000"
       - key: CORS_ORIGIN
         fromService:
           name: mumaa-web
@@ -22,7 +21,6 @@ services:
     plan: free
     env: docker
     region: singapore
-    dockerfilePath: ./Dockerfile
     envVars:
       - key: DATABASE_URL
         sync: false

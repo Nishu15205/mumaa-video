@@ -2,11 +2,15 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+# Copy socket service files
 COPY package.json ./
-RUN npm install
+COPY tsconfig.json ./
+COPY index.ts ./
 
-COPY . .
+# Install deps
+RUN npm install --legacy-peer-deps
 
+# Start socket service
 ENV PORT=10000
 EXPOSE 10000
 

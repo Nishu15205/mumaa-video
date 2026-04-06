@@ -18,7 +18,7 @@ COPY . .
 RUN ./node_modules/.bin/prisma generate
 
 # Build Next.js
-ENV NODE_OPTIONS=--max-old-space-size=384
+ENV NODE_OPTIONS=--max-old-space-size=1024
 RUN npm run build
 
 # Production settings
@@ -26,5 +26,5 @@ ENV NODE_ENV=production
 ENV PORT=10000
 EXPOSE 10000
 
-# Start Next.js
-CMD ["npx", "next", "start", "-H", "0.0.0.0"]
+# Start Next.js (use local binary, NOT npx to avoid v7 issue)
+CMD ["node_modules/.bin/next", "start", "-H", "0.0.0.0"]
