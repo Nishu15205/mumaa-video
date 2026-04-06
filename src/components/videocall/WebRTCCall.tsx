@@ -545,14 +545,78 @@ export function WebRTCCall({
     }
   }
 
-  // Toggle video
-  const toggleVideo = () => {
-    if (localStreamRef.current) {
-      const tracks = localStreamRef.current.getVideoTracks()
-      if (tracks.length > 0) {
-        tracks.forEach((t) => { t.enabled = !t.enabled })
-        setIsVideoEnabled((p) => !p)
+  // Toggle video — smart: re-acquires camera if no video tracks exist
+  const toggleVideo = async () => {
+    const stream = localStreamRef.current
+    const videoTracks = stream?.getVideoTracks() ?? []
+
+    // If video tracks exist, just toggle enabled state
+    if (videoTracks.length > 0) {
+      const willEnable = !videoTracks.some((t) => t.enabled)
+      videoTracks.forEach((t) => { t.enabled = willEnable })
+      setIsVideoEnabled(willEnable)
+      return
+    }
+
+    // No video tracks — try to acquire camera now
+    log('No video tracks, attempting to acquire camera...')
+    setIsAcquiringMedia(true)
+    setCameraError(null)
+    try {
+      const camStream = await navigator.mediaDevices.getUserMedia(VIDEO_CONSTRAINTS)
+      const newVideoTrack = camStream.getVideoTracks()[0]
+      if (!newVideoTrack) throw new Error('No video track returned')
+
+      // Stop the temporary audio tracks from this new stream (we already have audio)
+      camStream.getAudioTracks().forEach((t) => t.stop())
+
+      // Add video track to existing stream and peer connection
+      if (stream) {
+        stream.addTrack(newVideoTrack)
+      } else {
+        localStreamRef.current = camStream
       }
+
+      // Add to peer connection sender or create new sender
+      const pc = pcRef.current
+      if (pc) {
+        const senders = pc.getSenders()
+        const existingVideoSender = senders.find((s) => s.track?.kind === 'video')
+        if (existingVideoSender) {
+          await existingVideoSender.replaceTrack(newVideoTrack)
+        } else {
+          pc.addTrack(newVideoTrack, stream || camStream)
+        }
+        // Re-negotiate if connected
+        if (pc.connectionState === 'connected') {
+          log('Renegotiating after adding video track...')
+          const offer = await pc.createOffer()
+          await pc.setLocalDescription(offer)
+          if (socketRef.current?.connected) {
+            socketRef.current.emit('webrtc-offer', {
+              callId,
+              toUserId: otherUserId,
+              sdp: pc.localDescription?.toJSON(),
+            })
+          }
+        }
+      }
+
+      setIsVideoEnabled(true)
+      setCameraError(null)
+      attachLocalStream(localStreamRef.current!)
+      log('Camera acquired successfully via toggle!')
+    } catch (err: any) {
+      log(`Camera toggle failed: ${err.name} - ${err.message}`)
+      if (err.name === 'NotAllowedError') {
+        setCameraError('Camera permission denied. Please allow camera access in browser settings and try again.')
+      } else if (err.name === 'NotFoundError') {
+        setCameraError('No camera found on this device.')
+      } else {
+        setCameraError(`Could not enable camera: ${err.message}`)
+      }
+    } finally {
+      setIsAcquiringMedia(false)
     }
   }
 
