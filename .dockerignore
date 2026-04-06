@@ -8,4 +8,6 @@ upload
 !.env.example
 bun.lock
 .nvmrc
-mini-services/socket-service/node_modules
+mini-services
+Dockerfile
+.dockerignore
