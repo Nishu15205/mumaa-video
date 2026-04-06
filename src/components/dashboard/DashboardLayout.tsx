@@ -123,6 +123,9 @@ export default function DashboardLayout({ children, activePage = 'dashboard', on
   const handleNavClick = (id: string) => {
     onPageChange?.(id);
     setSidebarOpen(false);
+    // Scroll main content to top
+    const mainEl = document.querySelector('main');
+    if (mainEl) mainEl.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleLogout = () => {
@@ -295,7 +298,7 @@ export default function DashboardLayout({ children, activePage = 'dashboard', on
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={() => onPageChange?.('settings')}>
+                <DropdownMenuItem onClick={() => handleNavClick('settings')}>
                   <Settings className="h-4 w-4 mr-2" />
                   Settings
                 </DropdownMenuItem>

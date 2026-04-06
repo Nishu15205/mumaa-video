@@ -218,6 +218,9 @@ export default function Home() {
 
   const handlePageChange = useCallback((page: string) => {
     setDashboardPage(page);
+    // Scroll main content to top
+    const mainEl = document.querySelector('main');
+    if (mainEl) mainEl.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
   // Socket.IO — single shared connection stored in app-store for reuse by VideoCallScreen etc.

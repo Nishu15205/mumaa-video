@@ -745,9 +745,25 @@ export function WebRTCCall({
     const duration = callStartTimeRef.current
       ? Math.floor((Date.now() - callStartTimeRef.current.getTime()) / 1000)
       : 0
+    
+    // Notify the other peer via socket that this call is ending
+    try {
+      const socket = socketRef.current
+      if (socket?.connected) {
+        socket.emit('call-ended', {
+          callId,
+          toUserId: otherUserId,
+          reason: 'user-ended',
+        })
+        log('Emitted call-ended to peer')
+      }
+    } catch (e) {
+      log('Failed to emit call-ended:', e)
+    }
+    
     cleanup()
     onDisconnected(duration)
-  }, [cleanup, onDisconnected])
+  }, [callId, otherUserId, socketRef, cleanup, onDisconnected])
 
   return (
     <div className="absolute inset-0 z-10 bg-gray-950" data-webrtc-container>
