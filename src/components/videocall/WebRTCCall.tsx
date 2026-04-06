@@ -10,6 +10,9 @@ import {
   PhoneOff,
   Maximize,
   MonitorUp,
+  Camera,
+  CameraOff,
+  AlertCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app-store'
@@ -70,6 +73,8 @@ export function WebRTCCall({
   const [isRemoteVideoPresent, setIsRemoteVideoPresent] = useState(false)
   const [callStatus, setCallStatus] = useState<'connecting' | 'connected' | 'failed'>('connecting')
   const [isScreenSharing, setIsScreenSharing] = useState(false)
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  const [isAcquiringMedia, setIsAcquiringMedia] = useState(false)
 
   const getInitials = (name: string) => name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
 
@@ -236,35 +241,57 @@ export function WebRTCCall({
     return pc
   }, [handleTrack, sendICECandidate, setupConnectionMonitoring])
 
-  // Get user media with fallback
+  // Attach stream to local video element with retries
+  const attachLocalStream = useCallback((stream: MediaStream) => {
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = stream
+      localVideoRef.current.play().catch((e) => {
+        log(`Local video play failed: ${e.message}`)
+      })
+      log('Local video stream attached')
+    }
+  }, [])
+
+  // Get user media with better error handling
   const getMedia = useCallback(async (withVideo: boolean): Promise<MediaStream> => {
     log(`Requesting media (video: ${withVideo})...`)
+    setIsAcquiringMedia(true)
+    setCameraError(null)
     try {
       const stream = await navigator.mediaDevices.getUserMedia(
         withVideo ? VIDEO_CONSTRAINTS : AUDIO_ONLY_CONSTRAINTS
       )
       log(`Media obtained: ${stream.getAudioTracks().length} audio, ${stream.getVideoTracks().length} video tracks`)
       localStreamRef.current = stream
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream
-        localVideoRef.current.play().catch(() => {})
-      }
       setIsAudioEnabled(true)
-      setIsVideoEnabled(withVideo)
+      setIsVideoEnabled(stream.getVideoTracks().length > 0)
+      setCameraError(null)
+      attachLocalStream(stream)
       return stream
     } catch (err: any) {
       log(`Media error: ${err.name} - ${err.message}`)
-      if (withVideo && (err.name === 'NotAllowedError' || err.name === 'NotFoundError' || err.name === 'OverconstrainedError')) {
-        log('Falling back to audio-only...')
-        const audioStream = await navigator.mediaDevices.getUserMedia(AUDIO_ONLY_CONSTRAINTS)
-        localStreamRef.current = audioStream
-        setIsAudioEnabled(true)
-        setIsVideoEnabled(false)
-        return audioStream
+      if (withVideo) {
+        // Try audio-only fallback
+        try {
+          log('Camera failed, trying audio-only fallback...')
+          const audioStream = await navigator.mediaDevices.getUserMedia(AUDIO_ONLY_CONSTRAINTS)
+          localStreamRef.current = audioStream
+          setIsAudioEnabled(true)
+          setIsVideoEnabled(false)
+          setCameraError(`Camera unavailable (${err.name}). Using audio only.`)
+          return audioStream
+        } catch (audioErr: any) {
+          log(`Audio also failed: ${audioErr.name} - ${audioErr.message}`)
+          setCameraError('Camera and microphone access denied. Please check permissions.')
+          throw new Error('Media access denied. Please allow camera/microphone and refresh.')
+        }
       }
+      setCameraError(`Microphone error: ${err.name}`)
       throw err
+    } finally {
+      setIsAcquiringMedia(false)
     }
-  }, [])
+  }, [attachLocalStream])
 
   // Caller: initiate call — send WebRTC offer
   const initiateCall = useCallback(async () => {
@@ -300,18 +327,21 @@ export function WebRTCCall({
       // Attach to local video element
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream
-        localVideoRef.current.play().catch(() => {})
+        localVideoRef.current.play().catch((e) => log(`Local video play failed: ${e.message}`))
         log('Local video attached')
       } else {
         log('WARN: localVideoRef not ready yet, will retry')
         // Retry attaching after a short delay
-        setTimeout(() => {
+        const attachRetry = () => {
           if (localVideoRef.current && localStreamRef.current) {
             localVideoRef.current.srcObject = localStreamRef.current
-            localVideoRef.current.play().catch(() => {})
+            localVideoRef.current.play().catch((e) => log(`Local video play retry failed: ${e.message}`))
             log('Local video attached (retry)')
           }
-        }, 500)
+        }
+        setTimeout(attachRetry, 500)
+        setTimeout(attachRetry, 1000)
+        setTimeout(attachRetry, 2000)
       }
       
       const pc = await createPC()
@@ -347,12 +377,19 @@ export function WebRTCCall({
       if (data.callId === callId && data.fromUserId === otherUserId) {
         try {
           log('Processing offer, creating answer...')
-          const stream = localStreamRef.current || await getMedia(true)
-          localStreamRef.current = stream
-          if (localVideoRef.current) {
-            localVideoRef.current.srcObject = stream
-            localVideoRef.current.play().catch(() => {})
+          let stream = localStreamRef.current
+          if (!stream || stream.getTracks().length === 0) {
+            stream = await getMedia(true)
+          } else {
+            // Verify tracks are still live
+            const hasLiveTracks = stream.getTracks().some(t => t.readyState === 'live' || t.readyState === 'new')
+            if (!hasLiveTracks) {
+              log('WARN: Stored stream tracks dead, re-acquiring...')
+              stream = await getMedia(true)
+            }
           }
+          localStreamRef.current = stream
+          attachLocalStream(stream)
           const pc = await createPC()
           stream.getTracks().forEach((t) => pc.addTrack(t, stream))
 
@@ -433,27 +470,36 @@ export function WebRTCCall({
   // Initialize: use pre-acquired stream from store
   useEffect(() => {
     if (preStreamInitRef.current) return
+    preStreamInitRef.current = true
     const preStream = useAppStore.getState().localStream
     if (preStream && preStream.getTracks().length > 0) {
-      log('Using pre-acquired media stream from call accept')
+      // Check if tracks are still active (not stopped/expired)
+      const hasActiveTracks = preStream.getTracks().some(t => t.readyState === 'live' || t.readyState === 'new')
+      if (!hasActiveTracks) {
+        log('WARN: Pre-acquired stream tracks are dead, will re-acquire')
+        return
+      }
+      log(`Using pre-acquired media stream: ${preStream.getTracks().filter(t=>t.kind==='audio').length} audio, ${preStream.getTracks().filter(t=>t.kind==='video').length} video (readyState: ${preStream.getTracks().map(t=>t.readyState).join(', ')})`)
       localStreamRef.current = preStream
-      preStreamInitRef.current = true
       // Use microtask to avoid sync setState warning
       queueMicrotask(() => {
-        setIsAudioEnabled(preStream.getAudioTracks().some(t => t.enabled))
-        setIsVideoEnabled(preStream.getVideoTracks().some(t => t.enabled))
+        const audioTracks = preStream.getAudioTracks()
+        const videoTracks = preStream.getVideoTracks()
+        setIsAudioEnabled(audioTracks.some(t => t.enabled))
+        setIsVideoEnabled(videoTracks.some(t => t.enabled && (t.readyState === 'live' || t.readyState === 'new')))
       })
       // Attach to video element — retry since element might not be painted yet
       const attachVideo = () => {
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = preStream
-          localVideoRef.current.play().catch(() => {})
+          localVideoRef.current.play().catch((e) => log(`Pre-stream play failed: ${e.message}`))
           log('Pre-stream attached to video element')
         }
       }
       attachVideo()
       setTimeout(attachVideo, 300)
       setTimeout(attachVideo, 800)
+      setTimeout(attachVideo, 1500)
     } else {
       log('No pre-acquired stream in store, will request on init')
     }
@@ -590,12 +636,77 @@ export function WebRTCCall({
         </div>
       )}
 
+      {/* Camera Error Banner */}
+      <AnimatePresence>
+        {cameraError && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="absolute top-12 left-4 right-4 z-20 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/20 backdrop-blur-sm border border-amber-500/30"
+          >
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="text-amber-200 text-xs flex-1">{cameraError}</span>
+            <button
+              onClick={async () => {
+                try {
+                  setCameraError(null)
+                  setIsAcquiringMedia(true)
+                  const stream = await navigator.mediaDevices.getUserMedia(VIDEO_CONSTRAINTS)
+                  // Stop old tracks
+                  localStreamRef.current?.getTracks().forEach(t => t.stop())
+                  localStreamRef.current = stream
+                  setIsVideoEnabled(true)
+                  setIsAudioEnabled(true)
+                  // Add new tracks to peer connection
+                  const pc = pcRef.current
+                  if (pc) {
+                    const senders = pc.getSenders()
+                    stream.getVideoTracks().forEach(track => {
+                      const existingVideoSender = senders.find(s => s.track?.kind === 'video')
+                      if (existingVideoSender) {
+                        existingVideoSender.replaceTrack(track)
+                      } else {
+                        pc.addTrack(track, stream)
+                      }
+                    })
+                    stream.getAudioTracks().forEach(track => {
+                      const existingAudioSender = senders.find(s => s.track?.kind === 'audio')
+                      if (existingAudioSender) {
+                        existingAudioSender.replaceTrack(track)
+                      } else {
+                        pc.addTrack(track, stream)
+                      }
+                    })
+                  }
+                  attachLocalStream(stream)
+                  log('Camera retry succeeded!')
+                } catch (err: any) {
+                  setCameraError(`Camera still unavailable: ${err.name}. Tap to retry.`)
+                } finally {
+                  setIsAcquiringMedia(false)
+                }
+              }}
+              disabled={isAcquiringMedia}
+              className="text-amber-300 text-xs font-medium hover:text-amber-100 disabled:opacity-50"
+            >
+              {isAcquiringMedia ? 'Retrying...' : 'Retry'}
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Local video (PiP) */}
       <div className="absolute bottom-4 right-4 z-30 sm:bottom-6 sm:right-6">
         <div className={cn(
           'relative rounded-2xl overflow-hidden shadow-2xl border-2 border-white/20',
           'w-[120px] h-[90px] sm:w-[180px] sm:h-[135px]'
         )}>
+          {isAcquiringMedia && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-800">
+              <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            </div>
+          )}
           <video
             ref={localVideoRef}
             autoPlay
@@ -603,17 +714,21 @@ export function WebRTCCall({
             muted
             className={cn(
               'w-full h-full object-cover',
-              !isVideoEnabled && 'hidden'
+              !isVideoEnabled && !isAcquiringMedia && 'hidden'
             )}
             style={{ transform: 'scaleX(-1)' }}
           />
-          {!isVideoEnabled && (
+          {!isVideoEnabled && !isAcquiringMedia && (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
               <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center">
-                <span className="text-white text-sm font-bold">You</span>
+                <CameraOff className="w-5 h-5 text-gray-400" />
               </div>
             </div>
           )}
+          {/* Camera label */}
+          <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/40 backdrop-blur-sm">
+            <span className="text-[10px] text-white/70 font-medium">You</span>
+          </div>
         </div>
       </div>
 
