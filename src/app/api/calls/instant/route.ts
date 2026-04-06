@@ -43,28 +43,21 @@ export async function POST(req: NextRequest) {
 
     const plan = subscription?.plan || 'FREE';
 
-    // FREE plan users cannot make instant calls
-    if (plan === 'FREE') {
-      return NextResponse.json(
-        {
-          error: 'Instant calls require a paid plan. Please upgrade to Basic or Pro to start making calls.',
-          code: 'UPGRADE_REQUIRED',
-        },
-        { status: 403 }
-      );
-    }
+    // FREE plan users can make limited instant calls (demo friendly)
+    // Paid plans get more features, but FREE users can still test calls
 
-    if (plan === 'BASIC') {
+    // Call limits only apply to users with subscriptions (BASIC plan)
+    if (plan === 'BASIC' && subscription) {
       // Check daily call limit
       const now = new Date();
       let callsUsedToday = 0;
 
-      if (subscription?.lastCallReset && isSameDay(new Date(subscription.lastCallReset), now)) {
+      if (subscription.lastCallReset && isSameDay(new Date(subscription.lastCallReset), now)) {
         callsUsedToday = subscription.callsUsedToday || 0;
       } else {
         // Reset daily counter
         await db.subscription.update({
-          where: { id: subscription!.id },
+          where: { id: subscription.id },
           data: { callsUsedToday: 0, lastCallReset: now },
         });
       }
@@ -83,7 +76,7 @@ export async function POST(req: NextRequest) {
 
       // Increment daily call counter
       await db.subscription.update({
-        where: { id: subscription!.id },
+        where: { id: subscription.id },
         data: { callsUsedToday: callsUsedToday + 1 },
       });
     }
