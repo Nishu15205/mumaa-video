@@ -38,3 +38,30 @@ Stage Summary:
 - Socket service: tsx for TypeScript runtime
 - All verified working locally before push
 - Commit 286c821 pushed to GitHub
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix parent's camera not opening during video call + provide admin credentials
+
+Work Log:
+- Provided admin login credentials (admin@mumaa.in / admin123)
+- Analyzed full video call flow: FindNannies → handleJoinCall → pre-acquire media → startCall → VideoCallScreen (waiting) → WebRTCCall (connecting) → initiateCall
+- Identified root causes for camera not opening:
+  1. Pre-acquired stream tracks may expire/be dead by the time WebRTCCall mounts
+  2. No visible error UI when getUserMedia fails - silently falls back to audio-only
+  3. Video element attachment race condition
+- Fixed WebRTCCall.tsx with comprehensive changes:
+  - Added stream track readyState validation before using pre-acquired stream
+  - Added cameraError state with visible amber error banner + retry button
+  - Added isAcquiringMedia state with loading spinner on PiP video
+  - Created attachLocalStream helper for consistent stream attachment
+  - Added CameraOff icon + 'You' label on local PiP
+  - Verified stream tracks in onOffer handler before creating WebRTC answer
+  - More aggressive video element attachment retries (500ms, 1s, 2s)
+  - Better getUserMedia error handling with specific error names
+- Pushed to GitHub (commit 4c313ae)
+
+Stage Summary:
+- Key fix: Camera stream validity checking + visible error UI with retry
+- File changed: src/components/videocall/WebRTCCall.tsx (+146/-31 lines)
+- Pushed to: https://github.com/Nishu15205/mumaa-video.git (main branch)
