@@ -218,10 +218,11 @@ export function WebRTCCall({
     }
   }, [onConnected, onDisconnected, onError])
 
-  // Create peer connection
-  const createPC = useCallback(() => {
+  // Create peer connection (async because getIceServers fetches TURN config from API)
+  const createPC = useCallback(async () => {
     log('Creating RTCPeerConnection...')
-    const pc = new RTCPeerConnection(getIceServers())
+    const iceConfig = await getIceServers()
+    const pc = new RTCPeerConnection(iceConfig)
     pcRef.current = pc
     pc.ontrack = handleTrack
     pc.onicecandidate = sendICECandidate
@@ -293,7 +294,7 @@ export function WebRTCCall({
         localVideoRef.current.srcObject = stream
         localVideoRef.current.play().catch(() => {})
       }
-      const pc = createPC()
+      const pc = await createPC()
       stream.getTracks().forEach((t) => pc.addTrack(t, stream))
 
       log('Creating SDP offer...')
@@ -332,7 +333,7 @@ export function WebRTCCall({
             localVideoRef.current.srcObject = stream
             localVideoRef.current.play().catch(() => {})
           }
-          const pc = createPC()
+          const pc = await createPC()
           stream.getTracks().forEach((t) => pc.addTrack(t, stream))
 
           await pc.setRemoteDescription(new RTCSessionDescription(data.sdp))

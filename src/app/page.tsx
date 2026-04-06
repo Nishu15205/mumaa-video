@@ -231,8 +231,19 @@ export default function Home() {
         const { io } = await import('socket.io-client');
         if (disconnected) return;
 
-        // Socket URL: production uses direct URL, development uses proxy
-        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || ''
+        // Fetch runtime config from server (env vars without NEXT_PUBLIC_ prefix)
+        let socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || '';
+        if (!socketUrl) {
+          try {
+            const cfg = await fetch('/api/config');
+            if (cfg.ok) {
+              const data = await cfg.json();
+              socketUrl = data.socketUrl || '';
+            }
+          } catch {
+            // fallback: empty string (development proxy)
+          }
+        }
         const socket = io(socketUrl, {
           path: '/socket.io',
           transports: ['polling', 'websocket'],
