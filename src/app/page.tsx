@@ -91,18 +91,14 @@ class VideoCallErrorBoundary extends React.Component<
 function LoadingScreen() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-white">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="flex flex-col items-center gap-4"
-      >
+      <div className="flex flex-col items-center gap-4">
         <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center animate-pulse">
           <svg className="h-7 w-7 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
           </svg>
         </div>
         <p className="text-gray-500 text-sm font-medium">Loading Mumaa...</p>
-      </motion.div>
+      </div>
     </div>
   );
 }
