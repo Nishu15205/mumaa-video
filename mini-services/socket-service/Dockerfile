@@ -1,18 +1,21 @@
 FROM node:22-alpine
 
+# Install bun
+RUN npm install -g bun
+
 WORKDIR /app
 
-# Copy package files
-COPY package.json package-lock.json* ./
+# Copy lockfile + package.json
+COPY bun.lock package.json ./
 
 # Install deps
-RUN npm install --legacy-peer-deps
+RUN bun install --frozen-lockfile
 
-# Copy source code
+# Copy source
 COPY index.ts ./
 
-# Start socket service using tsx
+# Start
 ENV PORT=10000
 EXPOSE 10000
 
-CMD ["npx", "tsx", "index.ts"]
+CMD ["bun", "index.ts"]

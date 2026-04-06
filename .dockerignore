@@ -6,7 +6,6 @@ upload
 *.log
 .env*
 !.env.example
-bun.lock
 .nvmrc
 mini-services
 Dockerfile
