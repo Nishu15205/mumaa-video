@@ -11,3 +11,8 @@ bun.lock
 mini-services
 Dockerfile
 .dockerignore
+start-dev.sh
+socket.log
+dev.log
+preview-check.png
+worklog.md

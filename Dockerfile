@@ -5,17 +5,11 @@ RUN apk add --no-cache libc6-compat vips-dev
 
 WORKDIR /app
 
-# Copy package files first (layer caching)
-COPY package.json package-lock.json* ./
+# Copy everything EXCEPT what's in .dockerignore
+COPY . .
 
 # Install ALL dependencies (dev + prod needed for build)
 RUN npm install --legacy-peer-deps
-
-# Copy source code
-COPY src ./src/
-COPY public ./public/
-COPY prisma ./prisma/
-COPY next.config.ts tsconfig.json postcss.config.mjs tailwind.config.ts ./
 
 # Generate Prisma client using LOCAL binary (v6 pinned)
 RUN ./node_modules/.bin/prisma generate
