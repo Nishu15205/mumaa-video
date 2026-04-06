@@ -101,6 +101,25 @@ export async function PUT(
       ],
     });
 
+    // Notify both parties via socket that the call has ended
+    try {
+      const SOCKET_API_PORT = process.env.SOCKET_API_PORT || 3003;
+      const socketBase = `http://localhost:${SOCKET_API_PORT}/emit`;
+      const headers = { 'Content-Type': 'application/json', 'Connection': 'close' };
+
+      // Fire-and-forget socket notifications to both parent and nanny
+      fetch(socketBase, {
+        method: 'POST', headers,
+        body: JSON.stringify({ toUserId: call.parentId, event: 'call-ended', data: { callId: id, reason: 'ended' } }),
+      }).catch(() => {});
+      fetch(socketBase, {
+        method: 'POST', headers,
+        body: JSON.stringify({ toUserId: call.nannyId, event: 'call-ended', data: { callId: id, reason: 'ended' } }),
+      }).catch(() => {});
+    } catch (socketErr) {
+      console.warn('[End Call] Socket notification failed:', socketErr);
+    }
+
     return NextResponse.json({
       call: updatedCall,
       message: 'Call ended successfully',

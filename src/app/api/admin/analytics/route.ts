@@ -390,7 +390,7 @@ export async function GET(request: NextRequest) {
         cancelled: cancelledCalls,
         active: activeCalls,
         pending: pendingCalls,
-        noShow: totalCallsAll - completedCalls - cancelledCalls - activeCalls - pendingCalls,
+        noShow: Math.max(0, totalCallsAll - completedCalls - cancelledCalls - activeCalls - pendingCalls),
       },
       subscriptionDistribution: [
         { name: 'FREE', value: freeSubCount, color: '#d1d5db' },

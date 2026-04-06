@@ -102,7 +102,7 @@ function LoadingScreen() {
   );
 }
 
-function ParentDashboardRouter({ activePage }: { activePage: string }) {
+function ParentDashboardRouter({ activePage, onNavigate }: { activePage: string; onNavigate: (page: string) => void }) {
   switch (activePage) {
     case 'find':
       return <FindNannies />;
@@ -115,11 +115,11 @@ function ParentDashboardRouter({ activePage }: { activePage: string }) {
     case 'settings':
       return <Settings />;
     default:
-      return <ParentDashboard />;
+      return <ParentDashboard onNavigate={onNavigate} />;
   }
 }
 
-function NannyDashboardRouter({ activePage }: { activePage: string }) {
+function NannyDashboardRouter({ activePage, onNavigate }: { activePage: string; onNavigate?: (page: string) => void }) {
   switch (activePage) {
     case 'calls':
       return <NannyCalls />;
@@ -132,11 +132,11 @@ function NannyDashboardRouter({ activePage }: { activePage: string }) {
     case 'settings':
       return <Settings />;
     default:
-      return <NannyDashboard />;
+      return <NannyDashboard onNavigate={onNavigate} />;
   }
 }
 
-function AdminDashboardRouter({ activePage }: { activePage: string }) {
+function AdminDashboardRouter({ activePage, onNavigate }: { activePage: string; onNavigate: (page: string) => void }) {
   switch (activePage) {
     case 'users':
       return <AdminUsers />;
@@ -149,7 +149,7 @@ function AdminDashboardRouter({ activePage }: { activePage: string }) {
     case 'payments':
       return <AdminPayments />;
     default:
-      return <AdminDashboard />;
+      return <AdminDashboard onNavigate={onNavigate} />;
   }
 }
 
@@ -423,9 +423,9 @@ export default function Home() {
           {isAuthenticated && user && (
             <div className="h-screen">
               <DashboardLayout activePage={dashboardPage} onPageChange={handlePageChange}>
-                {user.role === 'PARENT' && <ParentDashboardRouter activePage={dashboardPage} />}
-                {user.role === 'NANNY' && <NannyDashboardRouter activePage={dashboardPage} />}
-                {user.role === 'ADMIN' && <AdminDashboardRouter activePage={dashboardPage} />}
+                {user.role === 'PARENT' && <ParentDashboardRouter activePage={dashboardPage} onNavigate={handlePageChange} />}
+                {user.role === 'NANNY' && <NannyDashboardRouter activePage={dashboardPage} onNavigate={handlePageChange} />}
+                {user.role === 'ADMIN' && <AdminDashboardRouter activePage={dashboardPage} onNavigate={handlePageChange} />}
               </DashboardLayout>
             </div>
           )}
