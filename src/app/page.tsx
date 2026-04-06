@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
 import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
 import { useNotificationStore } from '@/stores/notification-store';
@@ -360,16 +359,10 @@ export default function Home() {
 
       {/* Main Content */}
       {!showVideoCall && (
-        <AnimatePresence mode="wait">
+        <>
           {/* Public Pages */}
           {(!isAuthenticated || currentView === 'landing' || currentView === 'login' || currentView === 'signup' || currentView === 'forgot-password' || currentView === 'nanny-setup' || currentView === 'pricing' || currentView === 'terms' || currentView === 'privacy' || currentView === 'about' || currentView === 'apply-nanny') && (
-            <motion.div
-              key={currentView}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
-            >
+            <div>
               {currentView === 'landing' && <LandingPage />}
               {currentView === 'login' && (
                 <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 via-white to-pink-50 px-4">
@@ -403,27 +396,20 @@ export default function Home() {
                   <NannySetup />
                 </div>
               )}
-            </motion.div>
+            </div>
           )}
 
           {/* Dashboard */}
           {isAuthenticated && user && (
-            <motion.div
-              key={`dashboard-${user.role}-${dashboardPage}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="h-screen"
-            >
+            <div className="h-screen">
               <DashboardLayout activePage={dashboardPage} onPageChange={handlePageChange}>
                 {user.role === 'PARENT' && <ParentDashboardRouter activePage={dashboardPage} />}
                 {user.role === 'NANNY' && <NannyDashboardRouter activePage={dashboardPage} />}
                 {user.role === 'ADMIN' && <AdminDashboardRouter activePage={dashboardPage} />}
               </DashboardLayout>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
+        </>
       )}
     </div>
   );
