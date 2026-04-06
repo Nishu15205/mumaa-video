@@ -38,25 +38,72 @@ const AUDIO_ONLY_CONSTRAINTS: MediaStreamConstraints = {
 }
 
 async function acquireMedia(): Promise<MediaStream> {
+  // Strategy 1: Full constraints (video + audio)
   try {
     const stream = await navigator.mediaDevices.getUserMedia(MEDIA_CONSTRAINTS)
-    console.log('[IncomingCall] Media acquired: video+audio')
-    return stream
-  } catch (videoErr: any) {
-    console.warn('[IncomingCall] Video failed, trying audio only:', videoErr.name)
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia(AUDIO_ONLY_CONSTRAINTS)
-      console.log('[IncomingCall] Media acquired: audio only')
-      // Let user know camera failed — they can enable it during the call
-      toast('Camera not available', {
-        description: 'You can tap the camera button during the call to enable it.',
-        duration: 5000,
-      })
+    if (stream.getVideoTracks().length > 0) {
+      console.log('[IncomingCall] Media acquired: video+audio')
       return stream
-    } catch (audioErr: any) {
-      console.error('[IncomingCall] Media failed completely:', audioErr)
-      throw new Error('Camera/Microphone permission denied. Please allow access and try again.')
     }
+    // Video tracks empty despite no error — fall through
+    stream.getTracks().forEach(t => t.stop())
+  } catch (videoErr: any) {
+    console.warn('[IncomingCall] Strategy 1 failed:', videoErr.name)
+  }
+
+  // Strategy 2: Minimal video constraints (video: true)
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      video: true,
+    })
+    if (stream.getVideoTracks().length > 0) {
+      console.log('[IncomingCall] Media acquired: video (minimal) + audio')
+      return stream
+    }
+    stream.getTracks().forEach(t => t.stop())
+  } catch (e: any) {
+    console.warn('[IncomingCall] Strategy 2 failed:', e.name)
+  }
+
+  // Strategy 3: Enumerate cameras
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const videoDevices = devices.filter(d => d.kind === 'videoinput')
+    for (const device of videoDevices) {
+      try {
+        const camStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { deviceId: { exact: device.deviceId } },
+        })
+        if (camStream.getVideoTracks().length > 0) {
+          // Merge with audio
+          const audioStream = await navigator.mediaDevices.getUserMedia(AUDIO_ONLY_CONSTRAINTS)
+          camStream.getAudioTracks().forEach(t => t.stop())
+          audioStream.getVideoTracks().forEach(t => t.stop())
+          audioStream.getAudioTracks().forEach(t => camStream.addTrack(t))
+          console.log(`[IncomingCall] Media acquired from device: ${device.label}`)
+          return camStream
+        }
+        camStream.getTracks().forEach(t => t.stop())
+      } catch { /* try next */ }
+    }
+  } catch (e: any) {
+    console.warn('[IncomingCall] Strategy 3 failed:', e.name)
+  }
+
+  // All video strategies failed — audio only
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia(AUDIO_ONLY_CONSTRAINTS)
+    console.log('[IncomingCall] All video strategies failed, using audio only')
+    toast('Camera not available', {
+      description: 'You can tap the camera button during the call to enable it.',
+      duration: 5000,
+    })
+    return stream
+  } catch (audioErr: any) {
+    console.error('[IncomingCall] Media failed completely:', audioErr)
+    throw new Error('Camera/Microphone permission denied. Please allow access and try again.')
   }
 }
 

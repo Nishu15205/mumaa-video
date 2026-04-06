@@ -42,9 +42,76 @@ const VIDEO_CONSTRAINTS: MediaStreamConstraints = {
   },
 }
 
+/** Minimal constraints — used as fallback when strict constraints fail */
+const VIDEO_CONSTRAINTS_MINIMAL: MediaStreamConstraints = {
+  audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  video: true,
+}
+
 const AUDIO_ONLY_CONSTRAINTS: MediaStreamConstraints = {
   audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
   video: false,
+}
+
+/**
+ * Robustly acquire camera with multiple fallback strategies:
+ * 1. Try strict constraints (resolution, frameRate, facingMode)
+ * 2. Try minimal constraints (video: true, no extras)
+ * 3. Try every camera device one by one
+ * Returns the stream if successful, throws descriptive error if all fail.
+ */
+async function robustGetCamera(): Promise<MediaStream> {
+  // Strategy 1: Strict constraints
+  try {
+    log('Camera strategy 1: strict constraints')
+    const s = await navigator.mediaDevices.getUserMedia(VIDEO_CONSTRAINTS)
+    if (s.getVideoTracks().length > 0) return s
+    s.getTracks().forEach(t => t.stop())
+  } catch (e) {
+    log(`Strategy 1 failed: ${(e as Error).name}`)
+  }
+
+  // Strategy 2: Minimal constraints (no resolution/framerate limits)
+  try {
+    log('Camera strategy 2: minimal constraints')
+    const s = await navigator.mediaDevices.getUserMedia(VIDEO_CONSTRAINTS_MINIMAL)
+    if (s.getVideoTracks().length > 0) return s
+    s.getTracks().forEach(t => t.stop())
+  } catch (e) {
+    log(`Strategy 2 failed: ${(e as Error).name}`)
+  }
+
+  // Strategy 3: Enumerate cameras and try each one by deviceId
+  try {
+    log('Camera strategy 3: enumerate devices')
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const videoDevices = devices.filter(d => d.kind === 'videoinput')
+    log(`Found ${videoDevices.length} video device(s)`)
+
+    for (const device of videoDevices) {
+      try {
+        log(`Trying device: ${device.label || device.deviceId.slice(0, 8)}`)
+        const s = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { deviceId: { exact: device.deviceId } },
+        })
+        if (s.getVideoTracks().length > 0) {
+          log(`Camera acquired from device: ${device.label || device.deviceId.slice(0, 8)}`)
+          return s
+        }
+        s.getTracks().forEach(t => t.stop())
+      } catch {
+        log(`Device ${device.label || device.deviceId.slice(0, 8)} failed, trying next...`)
+      }
+    }
+  } catch (e) {
+    log(`Strategy 3 failed: ${(e as Error).name}`)
+  }
+
+  // All strategies failed
+  const err = new Error('Camera not available')
+  ;(err as any).code = 'CAMERA_UNAVAILABLE'
+  throw err
 }
 
 export function WebRTCCall({
@@ -67,6 +134,8 @@ export function WebRTCCall({
   const offerSentRef = useRef(false)
   /** Buffer for ICE candidates that arrive before PeerConnection is created */
   const iceBufferRef = useRef<any[]>([])
+  /** Debounce timer to prevent camera retry spam */
+  const cameraRetryTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   const [isAudioEnabled, setIsAudioEnabled] = useState(true)
   const [isVideoEnabled, setIsVideoEnabled] = useState(true)
@@ -252,46 +321,45 @@ export function WebRTCCall({
     }
   }, [])
 
-  // Get user media — tries video first, falls back to audio-only with clear error
+  // Get user media — uses robustGetCamera for video, falls back to audio-only
   const getMedia = useCallback(async (withVideo: boolean): Promise<MediaStream> => {
     log(`Requesting media (video: ${withVideo})...`)
     setIsAcquiringMedia(true)
     setCameraError(null)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(
-        withVideo ? VIDEO_CONSTRAINTS : AUDIO_ONLY_CONSTRAINTS
-      )
+      let stream: MediaStream
+      if (withVideo) {
+        // Try robust camera acquisition (3 strategies)
+        try {
+          stream = await robustGetCamera()
+          // Merge with audio constraints since robustGetCamera only returns video
+          const audioStream = await navigator.mediaDevices.getUserMedia(AUDIO_ONLY_CONSTRAINTS)
+          audioStream.getVideoTracks().forEach(t => t.stop())
+          audioStream.getAudioTracks().forEach(t => stream.addTrack(t))
+        } catch (camErr: any) {
+          log(`All camera strategies failed: ${camErr.message}`)
+          // Fall back to audio-only
+          stream = await navigator.mediaDevices.getUserMedia(AUDIO_ONLY_CONSTRAINTS)
+          setIsVideoEnabled(false)
+          setCameraError('Camera unavailable. Tap the camera button or preview to enable it.')
+          localStreamRef.current = stream
+          setIsAudioEnabled(true)
+          attachLocalStream(stream)
+          return stream
+        }
+      } else {
+        stream = await navigator.mediaDevices.getUserMedia(AUDIO_ONLY_CONSTRAINTS)
+      }
       log(`Media obtained: ${stream.getAudioTracks().length} audio, ${stream.getVideoTracks().length} video tracks`)
       localStreamRef.current = stream
       setIsAudioEnabled(true)
-      const hasVideo = stream.getVideoTracks().length > 0
-      setIsVideoEnabled(hasVideo)
-      if (!hasVideo && withVideo) {
-        // Camera was requested but not obtained — show clear message
-        setCameraError('Camera could not be started. Tap the camera button below to retry.')
-      }
+      setIsVideoEnabled(stream.getVideoTracks().length > 0)
       attachLocalStream(stream)
       return stream
     } catch (err: any) {
       log(`Media error: ${err.name} - ${err.message}`)
-      if (withVideo) {
-        // Try audio-only fallback
-        try {
-          log('Camera failed, trying audio-only fallback...')
-          const audioStream = await navigator.mediaDevices.getUserMedia(AUDIO_ONLY_CONSTRAINTS)
-          localStreamRef.current = audioStream
-          setIsAudioEnabled(true)
-          setIsVideoEnabled(false)
-          setCameraError('Camera unavailable. Tap the camera button below to enable it.')
-          return audioStream
-        } catch (audioErr: any) {
-          log(`Audio also failed: ${audioErr.name} - ${audioErr.message}`)
-          setCameraError('Camera and microphone access denied. Please check permissions and reload.')
-          throw new Error('Media access denied. Please allow camera/microphone and refresh.')
-        }
-      }
-      setCameraError(`Microphone error: ${err.name}`)
-      throw err
+      setCameraError('Microphone access denied. Please check permissions and reload.')
+      throw new Error('Media access denied. Please allow microphone and refresh.')
     } finally {
       setIsAcquiringMedia(false)
     }
@@ -555,7 +623,11 @@ export function WebRTCCall({
   }
 
   // Toggle video — smart: re-acquires camera if no video tracks exist
-  const toggleVideo = async () => {
+  const toggleVideo = useCallback(async () => {
+    // Debounce: ignore rapid taps (prevent retry spam)
+    if (cameraRetryTimerRef.current) return
+    if (isAcquiringMedia) return
+
     const stream = localStreamRef.current
     const videoTracks = stream?.getVideoTracks() ?? []
 
@@ -564,15 +636,16 @@ export function WebRTCCall({
       const willEnable = !videoTracks.some((t) => t.enabled)
       videoTracks.forEach((t) => { t.enabled = willEnable })
       setIsVideoEnabled(willEnable)
+      if (!willEnable) setCameraError(null) // Clear error when manually turning off
       return
     }
 
-    // No video tracks — try to acquire camera now
+    // No video tracks — try robust camera acquisition
     log('No video tracks, attempting to acquire camera...')
     setIsAcquiringMedia(true)
     setCameraError(null)
     try {
-      const camStream = await navigator.mediaDevices.getUserMedia(VIDEO_CONSTRAINTS)
+      const camStream = await robustGetCamera()
       const newVideoTrack = camStream.getVideoTracks()[0]
       if (!newVideoTrack) throw new Error('No video track returned')
 
@@ -616,18 +689,22 @@ export function WebRTCCall({
       attachLocalStream(localStreamRef.current!)
       log('Camera acquired successfully via toggle!')
     } catch (err: any) {
-      log(`Camera toggle failed: ${err.name} - ${err.message}`)
-      if (err.name === 'NotAllowedError') {
-        setCameraError('Camera permission denied. Please allow camera access in browser settings and try again.')
-      } else if (err.name === 'NotFoundError') {
+      log(`Camera toggle failed: ${(err as Error).name} - ${err.message}`)
+      if ((err as Error).name === 'NotAllowedError') {
+        setCameraError('Camera permission denied. Please allow camera in browser settings and try again.')
+      } else if ((err as Error).name === 'NotFoundError') {
         setCameraError('No camera found on this device.')
       } else {
-        setCameraError(`Could not enable camera: ${err.message}`)
+        setCameraError('Camera is busy or unavailable. Close other apps using the camera and try again in a few seconds.')
       }
+      // Set 3-second cooldown before next retry allowed
+      cameraRetryTimerRef.current = setTimeout(() => {
+        cameraRetryTimerRef.current = null
+      }, 3000)
     } finally {
       setIsAcquiringMedia(false)
     }
-  }
+  }, [isAcquiringMedia, callId, otherUserId, socketRef, attachLocalStream])
 
   // Screen share
   const toggleScreenShare = async () => {
@@ -722,40 +799,45 @@ export function WebRTCCall({
             <span className="text-amber-200 text-xs flex-1">{cameraError}</span>
             <button
               onClick={async () => {
+                if (isAcquiringMedia) return
                 try {
                   setCameraError(null)
                   setIsAcquiringMedia(true)
-                  const stream = await navigator.mediaDevices.getUserMedia(VIDEO_CONSTRAINTS)
+                  const camStream = await robustGetCamera()
+                  // Merge with audio
+                  const audioStream = await navigator.mediaDevices.getUserMedia(AUDIO_ONLY_CONSTRAINTS)
+                  audioStream.getVideoTracks().forEach(t => t.stop())
+                  audioStream.getAudioTracks().forEach(t => camStream.addTrack(t))
                   // Stop old tracks
                   localStreamRef.current?.getTracks().forEach(t => t.stop())
-                  localStreamRef.current = stream
-                  setIsVideoEnabled(true)
+                  localStreamRef.current = camStream
+                  setIsVideoEnabled(camStream.getVideoTracks().length > 0)
                   setIsAudioEnabled(true)
                   // Add new tracks to peer connection
                   const pc = pcRef.current
                   if (pc) {
                     const senders = pc.getSenders()
-                    stream.getVideoTracks().forEach(track => {
+                    camStream.getVideoTracks().forEach(track => {
                       const existingVideoSender = senders.find(s => s.track?.kind === 'video')
                       if (existingVideoSender) {
                         existingVideoSender.replaceTrack(track)
                       } else {
-                        pc.addTrack(track, stream)
+                        pc.addTrack(track, camStream)
                       }
                     })
-                    stream.getAudioTracks().forEach(track => {
+                    camStream.getAudioTracks().forEach(track => {
                       const existingAudioSender = senders.find(s => s.track?.kind === 'audio')
                       if (existingAudioSender) {
                         existingAudioSender.replaceTrack(track)
                       } else {
-                        pc.addTrack(track, stream)
+                        pc.addTrack(track, camStream)
                       }
                     })
                   }
-                  attachLocalStream(stream)
-                  log('Camera retry succeeded!')
+                  attachLocalStream(camStream)
+                  log('Camera retry from banner succeeded!')
                 } catch (err: any) {
-                  setCameraError(`Camera still unavailable: ${err.name}. Tap to retry.`)
+                  setCameraError('Camera still unavailable. Close other apps using it and try again.')
                 } finally {
                   setIsAcquiringMedia(false)
                 }
