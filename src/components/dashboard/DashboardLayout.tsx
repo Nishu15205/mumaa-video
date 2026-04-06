@@ -46,36 +46,36 @@ import { cn } from '@/lib/utils';
 import type { AppView } from '@/types';
 
 interface NavItem {
-  id: AppView;
+  id: string;
   label: string;
   icon: ReactNode;
 }
 
 const parentNav: NavItem[] = [
-  { id: 'parent-dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
-  { id: 'parent-dashboard', label: 'Find Nannies', icon: <UserCheck className="h-5 w-5" /> },
-  { id: 'parent-dashboard', label: 'My Calls', icon: <Phone className="h-5 w-5" /> },
-  { id: 'parent-dashboard', label: 'Schedule Call', icon: <CalendarPlus className="h-5 w-5" /> },
-  { id: 'parent-dashboard', label: 'Subscription', icon: <CreditCard className="h-5 w-5" /> },
-  { id: 'parent-dashboard', label: 'Settings', icon: <Settings className="h-5 w-5" /> },
+  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
+  { id: 'find', label: 'Find Nannies', icon: <UserCheck className="h-5 w-5" /> },
+  { id: 'calls', label: 'My Calls', icon: <Phone className="h-5 w-5" /> },
+  { id: 'schedule', label: 'Schedule Call', icon: <CalendarPlus className="h-5 w-5" /> },
+  { id: 'subscription', label: 'Subscription', icon: <CreditCard className="h-5 w-5" /> },
+  { id: 'settings', label: 'Settings', icon: <Settings className="h-5 w-5" /> },
 ];
 
 const nannyNav: NavItem[] = [
-  { id: 'nanny-dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
-  { id: 'nanny-dashboard', label: 'My Calls', icon: <Phone className="h-5 w-5" /> },
-  { id: 'nanny-dashboard', label: 'Availability', icon: <Clock className="h-5 w-5" /> },
-  { id: 'nanny-dashboard', label: 'Earnings', icon: <DollarSign className="h-5 w-5" /> },
-  { id: 'nanny-dashboard', label: 'Bank Details', icon: <Landmark className="h-5 w-5" /> },
-  { id: 'nanny-dashboard', label: 'Settings', icon: <Settings className="h-5 w-5" /> },
+  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
+  { id: 'calls', label: 'My Calls', icon: <Phone className="h-5 w-5" /> },
+  { id: 'availability', label: 'Availability', icon: <Clock className="h-5 w-5" /> },
+  { id: 'earnings', label: 'Earnings', icon: <DollarSign className="h-5 w-5" /> },
+  { id: 'bank', label: 'Bank Details', icon: <Landmark className="h-5 w-5" /> },
+  { id: 'settings', label: 'Settings', icon: <Settings className="h-5 w-5" /> },
 ];
 
 const adminNav: NavItem[] = [
-  { id: 'admin-dashboard', label: 'Overview', icon: <BarChart3 className="h-5 w-5" /> },
-  { id: 'admin-dashboard', label: 'Users', icon: <Users className="h-5 w-5" /> },
-  { id: 'admin-dashboard', label: 'Call Sessions', icon: <Phone className="h-5 w-5" /> },
-  { id: 'admin-dashboard', label: 'Applications', icon: <ClipboardList className="h-5 w-5" /> },
-  { id: 'admin-dashboard', label: 'Payments', icon: <Wallet className="h-5 w-5" /> },
-  { id: 'admin-dashboard', label: 'Analytics', icon: <BarChart3 className="h-5 w-5" /> },
+  { id: 'dashboard', label: 'Overview', icon: <BarChart3 className="h-5 w-5" /> },
+  { id: 'users', label: 'Users', icon: <Users className="h-5 w-5" /> },
+  { id: 'calls', label: 'Call Sessions', icon: <Phone className="h-5 w-5" /> },
+  { id: 'applications', label: 'Applications', icon: <ClipboardList className="h-5 w-5" /> },
+  { id: 'payments', label: 'Payments', icon: <Wallet className="h-5 w-5" /> },
+  { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="h-5 w-5" /> },
 ];
 
 interface DashboardLayoutProps {
@@ -91,7 +91,6 @@ export default function DashboardLayout({ children, activePage = 'dashboard', on
   const [searchQuery, setSearchQuery] = useState('');
 
   const navItems = user?.role === 'ADMIN' ? adminNav : user?.role === 'NANNY' ? nannyNav : parentNav;
-  const navLabels = user?.role === 'ADMIN' ? ['overview', 'users', 'calls', 'applications', 'payments', 'analytics'] : user?.role === 'NANNY' ? ['dashboard', 'calls', 'availability', 'earnings', 'bank', 'settings'] : ['dashboard', 'find', 'calls', 'schedule', 'subscription', 'settings'];
 
   const getInitials = (name: string) => {
     return name
@@ -120,8 +119,8 @@ export default function DashboardLayout({ children, activePage = 'dashboard', on
     }
   };
 
-  const handleNavClick = (label: string) => {
-    onPageChange?.(label);
+  const handleNavClick = (id: string) => {
+    onPageChange?.(id);
     setSidebarOpen(false);
   };
 
@@ -197,13 +196,12 @@ export default function DashboardLayout({ children, activePage = 'dashboard', on
         {/* Navigation */}
         <ScrollArea className="flex-1 px-3 py-2">
           <nav className="space-y-1">
-            {navItems.map((item, index) => {
-              const label = navLabels[index];
-              const isActive = activePage === label;
+            {navItems.map((item) => {
+              const isActive = activePage === item.id;
               return (
                 <button
-                  key={index}
-                  onClick={() => handleNavClick(label)}
+                  key={item.id}
+                  onClick={() => handleNavClick(item.id)}
                   className={cn(
                     'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200',
                     isActive
