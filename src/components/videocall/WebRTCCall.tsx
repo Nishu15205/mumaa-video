@@ -288,12 +288,32 @@ export function WebRTCCall({
     try {
       offerSentRef.current = true
       log(`Starting call as caller (callId: ${callId})`)
-      const stream = localStreamRef.current || await getMedia(true)
+      
+      // Get media stream — use pre-acquired or request new
+      let stream = localStreamRef.current
+      if (!stream || stream.getTracks().length === 0) {
+        log('No pre-acquired stream, requesting camera/mic...')
+        stream = await getMedia(true)
+      }
       localStreamRef.current = stream
+      
+      // Attach to local video element
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream
         localVideoRef.current.play().catch(() => {})
+        log('Local video attached')
+      } else {
+        log('WARN: localVideoRef not ready yet, will retry')
+        // Retry attaching after a short delay
+        setTimeout(() => {
+          if (localVideoRef.current && localStreamRef.current) {
+            localVideoRef.current.srcObject = localStreamRef.current
+            localVideoRef.current.play().catch(() => {})
+            log('Local video attached (retry)')
+          }
+        }, 500)
       }
+      
       const pc = await createPC()
       stream.getTracks().forEach((t) => pc.addTrack(t, stream))
 
@@ -414,19 +434,28 @@ export function WebRTCCall({
   useEffect(() => {
     if (preStreamInitRef.current) return
     const preStream = useAppStore.getState().localStream
-    if (preStream) {
+    if (preStream && preStream.getTracks().length > 0) {
       log('Using pre-acquired media stream from call accept')
       localStreamRef.current = preStream
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = preStream
-        localVideoRef.current.play().catch(() => {})
-      }
       preStreamInitRef.current = true
       // Use microtask to avoid sync setState warning
       queueMicrotask(() => {
         setIsAudioEnabled(preStream.getAudioTracks().some(t => t.enabled))
         setIsVideoEnabled(preStream.getVideoTracks().some(t => t.enabled))
       })
+      // Attach to video element — retry since element might not be painted yet
+      const attachVideo = () => {
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = preStream
+          localVideoRef.current.play().catch(() => {})
+          log('Pre-stream attached to video element')
+        }
+      }
+      attachVideo()
+      setTimeout(attachVideo, 300)
+      setTimeout(attachVideo, 800)
+    } else {
+      log('No pre-acquired stream in store, will request on init')
     }
   }, [])
 
