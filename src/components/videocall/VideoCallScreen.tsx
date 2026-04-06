@@ -57,13 +57,58 @@ export function VideoCallScreen() {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // ─── Keep socketRef in sync with the store socket (ONE socket, no creation) ───
+  // If no socket exists, create a new one from runtime config
   useEffect(() => {
     if (socket) {
       socketRef.current = socket
       setSocketReady(!!socket.connected)
     } else {
-      socketRef.current = null
-      setSocketReady(false)
+      // No socket in store — create a fresh one
+      ;(async () => {
+        try {
+          const { io } = await import('socket.io-client')
+          if (!mountedRef.current) return
+
+          // Fetch runtime config for socket URL
+          let socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || ''
+          if (!socketUrl) {
+            try {
+              const cfg = await fetch('/api/config')
+              if (cfg.ok) {
+                const data = await cfg.json()
+                socketUrl = data.socketUrl || ''
+              }
+            } catch { /* fallback */ }
+          }
+
+          const newSocket = io(socketUrl, {
+            path: '/socket.io',
+            transports: ['polling', 'websocket'],
+            upgrade: true,
+            reconnection: true,
+            reconnectionAttempts: 20,
+            reconnectionDelay: 1000,
+            timeout: 20000,
+          })
+
+          newSocket.on('connect', () => {
+            // Re-authenticate
+            const currentUser = useAuthStore.getState().user
+            if (currentUser?.id && currentUser?.role) {
+              newSocket.emit('auth', { userId: currentUser.id, role: currentUser.role })
+            }
+            if (mountedRef.current) setSocketReady(true)
+          })
+          newSocket.on('disconnect', () => {
+            if (mountedRef.current) setSocketReady(false)
+          })
+
+          socketRef.current = newSocket
+          useAppStore.getState().setSocket(newSocket)
+        } catch {
+          // Socket creation failed
+        }
+      })()
     }
   }, [socket])
 
