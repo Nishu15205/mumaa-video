@@ -3,11 +3,11 @@ import { execSync } from 'child_process';
 import bcrypt from 'bcryptjs';
 import { db } from '@/lib/db';
 
-export async function POST() {
+async function seedDatabase() {
   try {
     // Push schema to database (creates tables if not exist)
     try {
-      execSync('npx prisma db push --skip-generate --accept-data-loss 2>&1', {
+      execSync('./node_modules/.bin/prisma db push --skip-generate --accept-data-loss 2>&1', {
         stdio: 'pipe',
         timeout: 60000,
       });
@@ -96,4 +96,13 @@ export async function POST() {
       { status: 500 }
     );
   }
+}
+
+// Support both GET (easy browser test) and POST
+export async function GET() {
+  return seedDatabase();
+}
+
+export async function POST() {
+  return seedDatabase();
 }
