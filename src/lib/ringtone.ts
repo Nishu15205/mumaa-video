@@ -8,6 +8,7 @@ let isPlaying = false;
 /**
  * Ensure AudioContext is unlocked by a user gesture.
  * Browsers require a user interaction before allowing audio playback.
+ * This is called EVERY TIME a user interacts — not just once.
  */
 function unlockAudioContext(): void {
   if (audioContext && audioContext.state === 'suspended') {
@@ -15,17 +16,17 @@ function unlockAudioContext(): void {
   }
 }
 
-// Auto-unlock on first user interaction (click, touch, keydown)
+// Keep AudioContext unlocked on EVERY user interaction (not just once)
+// This prevents the ringtone delay issue when the page has been idle
 if (typeof window !== 'undefined') {
   const unlock = () => {
     unlockAudioContext();
-    window.removeEventListener('click', unlock);
-    window.removeEventListener('touchstart', unlock);
-    window.removeEventListener('keydown', unlock);
   };
-  window.addEventListener('click', unlock, { once: true });
-  window.addEventListener('touchstart', unlock, { once: true });
-  window.addEventListener('keydown', unlock, { once: true });
+  window.addEventListener('click', unlock);
+  window.addEventListener('touchstart', unlock);
+  window.addEventListener('keydown', unlock);
+  window.addEventListener('mousedown', unlock);
+  window.addEventListener('scroll', unlock);
 }
 
 function getAudioContext(): AudioContext {
@@ -96,12 +97,28 @@ export function startRingtone() {
 
   try {
     const ctx = getAudioContext();
-    // Play immediately
-    playSingleRing(ctx, 0.35);
-    // Then repeat every 2 seconds
+    
+    // Force-resume AudioContext immediately (fixes delayed ringtone on desktop)
+    if (ctx.state === 'suspended') {
+      ctx.resume().then(() => {
+        playSingleRing(ctx, 0.35);
+      }).catch(() => {
+        // Fallback: try playing anyway
+        playSingleRing(ctx, 0.35);
+      });
+    } else {
+      // Play immediately — no delay
+      playSingleRing(ctx, 0.35);
+    }
+    
+    // Repeat every 2 seconds
     ringInterval = setInterval(() => {
       if (isPlaying) {
-        playSingleRing(getAudioContext(), 0.35);
+        const currentCtx = getAudioContext();
+        if (currentCtx.state === 'suspended') {
+          currentCtx.resume().catch(() => {});
+        }
+        playSingleRing(currentCtx, 0.35);
       }
     }, 2000);
   } catch {

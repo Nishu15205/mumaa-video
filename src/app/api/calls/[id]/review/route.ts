@@ -32,11 +32,16 @@ export async function POST(
       );
     }
 
+    // If call is not COMPLETED yet, auto-complete it (the end API may have failed)
     if (call.status !== 'COMPLETED') {
-      return NextResponse.json(
-        { error: 'Reviews can only be added to completed calls' },
-        { status: 400 }
-      );
+      console.log(`[Review] Call ${id} is '${call.status}', auto-completing before review`);
+      await db.callSession.update({
+        where: { id },
+        data: {
+          status: 'COMPLETED',
+          endedAt: new Date(),
+        },
+      });
     }
 
     // Check if user already reviewed this call

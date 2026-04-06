@@ -14,6 +14,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useAppStore } from '@/stores/app-store'
@@ -336,8 +337,10 @@ export function VideoCallScreen() {
     setWebrtcEpoch((e) => e + 1) // Force WebRTCCall re-mount
   }, [])
 
+  const [reviewSubmitted, setReviewSubmitted] = useState(false)
+
   const handleSubmitReview = useCallback(async () => {
-    if (!rating || !currentCall || !user) return
+    if (!rating || !currentCall || !user || reviewSubmitted) return
     setIsReviewSubmitting(true)
     try {
       const response = await fetch(`/api/calls/${currentCall.id}/review`, {
@@ -350,17 +353,22 @@ export function VideoCallScreen() {
           comment: reviewComment || null,
         }),
       })
+      const data = await response.json()
       if (response.ok) {
-        toast.success('Review Submitted')
+        toast.success('Review Submitted!')
         setRating(0)
         setReviewComment('')
+        setReviewSubmitted(true)
+      } else {
+        toast.error(data.error || 'Failed to submit review')
       }
-    } catch {
-      toast.error('Review Failed')
+    } catch (err: any) {
+      console.error('[Review] Submit error:', err)
+      toast.error('Network error. Please try again.')
     } finally {
       setIsReviewSubmitting(false)
     }
-  }, [rating, currentCall, user, otherPersonId, reviewComment])
+  }, [rating, currentCall, user, otherPersonId, reviewComment, reviewSubmitted])
 
   const handleBackToDashboard = useCallback(() => {
     endCall()
@@ -618,10 +626,15 @@ export function VideoCallScreen() {
 
               <Button
                 onClick={handleSubmitReview}
-                disabled={!rating || isReviewSubmitting}
-                className="w-full bg-rose-500 hover:bg-rose-600 text-white rounded-xl h-11 font-medium disabled:opacity-40 mb-3"
+                disabled={!rating || isReviewSubmitting || reviewSubmitted}
+                className={cn(
+                  "w-full rounded-xl h-11 font-medium mb-3 transition-colors",
+                  reviewSubmitted
+                    ? "bg-emerald-500 text-white cursor-default"
+                    : "bg-rose-500 hover:bg-rose-600 text-white disabled:opacity-40"
+                )}
               >
-                {isReviewSubmitting ? 'Submitting...' : 'Submit Review'}
+                {reviewSubmitted ? '✓ Review Submitted' : isReviewSubmitting ? 'Submitting...' : 'Submit Review'}
               </Button>
 
               <Button
