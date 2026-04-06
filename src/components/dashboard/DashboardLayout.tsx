@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import type { AppView } from '@/types';
+import { Wifi, WifiOff } from 'lucide-react';
 
 interface NavItem {
   id: string;
@@ -86,7 +87,7 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children, activePage = 'dashboard', onPageChange }: DashboardLayoutProps) {
   const { user, logout } = useAuthStore();
-  const { sidebarOpen, toggleSidebar, setSidebarOpen } = useAppStore();
+  const { sidebarOpen, toggleSidebar, setSidebarOpen, socketAuthenticated } = useAppStore();
   const { notifications } = useNotificationStore();
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -258,6 +259,24 @@ export default function DashboardLayout({ children, activePage = 'dashboard', on
           </div>
 
           <div className="flex items-center gap-2 relative">
+            {/* Socket connection status */}
+            <div
+              className={cn(
+                'flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium',
+                socketAuthenticated
+                  ? 'bg-emerald-50 text-emerald-600'
+                  : 'bg-amber-50 text-amber-600'
+              )}
+              title={socketAuthenticated ? 'Connected to server' : 'Connecting to server...'}
+            >
+              {socketAuthenticated ? (
+                <Wifi className="h-3 w-3" />
+              ) : (
+                <WifiOff className="h-3 w-3 animate-pulse" />
+              )}
+              <span className="hidden sm:inline">{socketAuthenticated ? 'Live' : 'Connecting...'}</span>
+            </div>
+
             {/* Notifications */}
             <NotificationPanel />
 

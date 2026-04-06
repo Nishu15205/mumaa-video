@@ -244,6 +244,7 @@ export default function Home() {
             // fallback: empty string (development proxy)
           }
         }
+        console.log('[Socket] Connecting to:', socketUrl || '(same origin - dev proxy)');
         const socket = io(socketUrl, {
           path: '/socket.io',
           transports: ['polling', 'websocket'],
@@ -256,15 +257,23 @@ export default function Home() {
         });
 
         socket.on('connect', () => {
+          console.log('[Socket] Connected:', socket.id);
           socket.emit('auth', { userId: user.id, role: user.role });
           useAppStore.getState().setSocketAuthenticated(true);
         });
 
-        socket.on('disconnect', () => {
+        socket.on('connect_error', (err) => {
+          console.error('[Socket] Connection error:', err.message);
+          useAppStore.getState().setSocketAuthenticated(false);
+        });
+
+        socket.on('disconnect', (reason) => {
+          console.warn('[Socket] Disconnected:', reason);
           useAppStore.getState().setSocketAuthenticated(false);
         });
 
         socket.on('incoming-call', (data: any) => {
+          console.log('[Socket] Incoming call from:', data.callerName, data.callId);
           useAppStore.getState().setIncomingCall({
             callId: data.callId,
             callerId: data.callerId,
