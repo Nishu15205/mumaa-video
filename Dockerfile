@@ -29,5 +29,7 @@ ENV NODE_ENV=production
 ENV PORT=10000
 EXPOSE 10000
 
-# Start Next.js
-CMD ["bun", "start"]
+# Start script: push DB schema then start Next.js
+COPY docker-entrypoint.sh /
+RUN chmod +x /docker-entrypoint.sh
+CMD ["/docker-entrypoint.sh"]
