@@ -52,3 +52,14 @@ next-env.d.ts
 # IDE
 .vscode/
 .idea/
+
+# AI / Agent files
+skills/
+agent-ctx/
+worklog.md
+
+# Dev artifacts
+*.pid
+start-dev.sh
+test-*.png
+preview-check.png
