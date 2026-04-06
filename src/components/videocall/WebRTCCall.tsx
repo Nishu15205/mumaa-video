@@ -10,9 +10,9 @@ import {
   PhoneOff,
   Maximize,
   MonitorUp,
-  Camera,
   CameraOff,
   AlertCircle,
+  Camera,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app-store'
@@ -252,7 +252,7 @@ export function WebRTCCall({
     }
   }, [])
 
-  // Get user media with better error handling
+  // Get user media — tries video first, falls back to audio-only with clear error
   const getMedia = useCallback(async (withVideo: boolean): Promise<MediaStream> => {
     log(`Requesting media (video: ${withVideo})...`)
     setIsAcquiringMedia(true)
@@ -264,8 +264,12 @@ export function WebRTCCall({
       log(`Media obtained: ${stream.getAudioTracks().length} audio, ${stream.getVideoTracks().length} video tracks`)
       localStreamRef.current = stream
       setIsAudioEnabled(true)
-      setIsVideoEnabled(stream.getVideoTracks().length > 0)
-      setCameraError(null)
+      const hasVideo = stream.getVideoTracks().length > 0
+      setIsVideoEnabled(hasVideo)
+      if (!hasVideo && withVideo) {
+        // Camera was requested but not obtained — show clear message
+        setCameraError('Camera could not be started. Tap the camera button below to retry.')
+      }
       attachLocalStream(stream)
       return stream
     } catch (err: any) {
@@ -278,11 +282,11 @@ export function WebRTCCall({
           localStreamRef.current = audioStream
           setIsAudioEnabled(true)
           setIsVideoEnabled(false)
-          setCameraError(`Camera unavailable (${err.name}). Using audio only.`)
+          setCameraError('Camera unavailable. Tap the camera button below to enable it.')
           return audioStream
         } catch (audioErr: any) {
           log(`Audio also failed: ${audioErr.name} - ${audioErr.message}`)
-          setCameraError('Camera and microphone access denied. Please check permissions.')
+          setCameraError('Camera and microphone access denied. Please check permissions and reload.')
           throw new Error('Media access denied. Please allow camera/microphone and refresh.')
         }
       }
@@ -486,7 +490,12 @@ export function WebRTCCall({
         const audioTracks = preStream.getAudioTracks()
         const videoTracks = preStream.getVideoTracks()
         setIsAudioEnabled(audioTracks.some(t => t.enabled))
-        setIsVideoEnabled(videoTracks.some(t => t.enabled && (t.readyState === 'live' || t.readyState === 'new')))
+        const hasVideo = videoTracks.some(t => t.enabled && (t.readyState === 'live' || t.readyState === 'new'))
+        setIsVideoEnabled(hasVideo)
+        // If no video in pre-acquired stream, show helpful message
+        if (!hasVideo) {
+          setCameraError('Camera not started. Tap the camera button or the preview to enable it.')
+        }
       })
       // Attach to video element — retry since element might not be painted yet
       const attachVideo = () => {
@@ -783,11 +792,16 @@ export function WebRTCCall({
             style={{ transform: 'scaleX(-1)' }}
           />
           {!isVideoEnabled && !isAcquiringMedia && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
-              <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center">
-                <CameraOff className="w-5 h-5 text-gray-400" />
+            <button
+              onClick={toggleVideo}
+              className="absolute inset-0 flex flex-col items-center justify-center bg-gray-800 gap-1.5 cursor-pointer hover:bg-gray-700 transition-colors"
+              title="Tap to enable camera"
+            >
+              <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center">
+                <Camera className="w-5 h-5 text-gray-300" />
               </div>
-            </div>
+              <span className="text-[9px] text-gray-400 font-medium">Tap to enable</span>
+            </button>
           )}
           {/* Camera label */}
           <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/40 backdrop-blur-sm">

@@ -47,6 +47,11 @@ async function acquireMedia(): Promise<MediaStream> {
     try {
       const stream = await navigator.mediaDevices.getUserMedia(AUDIO_ONLY_CONSTRAINTS)
       console.log('[IncomingCall] Media acquired: audio only')
+      // Let user know camera failed — they can enable it during the call
+      toast('Camera not available', {
+        description: 'You can tap the camera button during the call to enable it.',
+        duration: 5000,
+      })
       return stream
     } catch (audioErr: any) {
       console.error('[IncomingCall] Media failed completely:', audioErr)
