@@ -248,9 +248,10 @@ export default function Home() {
           }
         }
         console.log('[Socket] Connecting to:', socketUrl || '(same origin - dev proxy)');
+        const isCrossOrigin = socketUrl && socketUrl !== '' && !socketUrl.startsWith('/');
         const socket = io(socketUrl, {
           path: '/socket.io',
-          transports: ['polling', 'websocket'],
+          transports: isCrossOrigin ? ['websocket', 'polling'] : ['polling', 'websocket'],
           upgrade: true,
           reconnection: true,
           reconnectionAttempts: 20,

@@ -82,9 +82,10 @@ export function VideoCallScreen() {
             } catch { /* fallback */ }
           }
 
+          const isCrossOrigin = socketUrl && socketUrl !== '' && !socketUrl.startsWith('/');
           const newSocket = io(socketUrl, {
             path: '/socket.io',
-            transports: ['polling', 'websocket'],
+            transports: isCrossOrigin ? ['websocket', 'polling'] : ['polling', 'websocket'],
             upgrade: true,
             reconnection: true,
             reconnectionAttempts: 20,

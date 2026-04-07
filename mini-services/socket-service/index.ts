@@ -98,7 +98,9 @@ const httpServer = createServer(async (req, res) => {
 const io = new Server(httpServer, {
   path: '/socket.io',
   cors: {
-    origin: process.env.CORS_ORIGIN || '*',
+    // Reflect the request origin dynamically (required for credentials)
+    // Never use '*' with credentials: true — browsers reject it
+    origin: true,
     methods: ['GET', 'POST'],
     allowedHeaders: ['*'],
     credentials: true,
