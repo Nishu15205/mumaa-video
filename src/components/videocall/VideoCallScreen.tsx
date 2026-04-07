@@ -90,6 +90,8 @@ export function VideoCallScreen() {
             reconnectionAttempts: 20,
             reconnectionDelay: 1000,
             timeout: 20000,
+            // Route through Caddy gateway to socket-service port 3003
+            query: { XTransformPort: '3003' },
           })
 
           newSocket.on('connect', () => {

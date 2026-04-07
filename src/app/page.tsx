@@ -257,6 +257,8 @@ export default function Home() {
           reconnectionDelay: 1000,
           reconnectionDelayMax: 5000,
           timeout: 20000,
+          // Route through Caddy gateway to socket-service port 3003
+          query: { XTransformPort: '3003' },
         });
 
         socket.on('connect', () => {
