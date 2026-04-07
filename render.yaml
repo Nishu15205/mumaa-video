@@ -29,6 +29,11 @@ services:
           name: mumaa-socket
           type: web
           property: hostport
+      - key: SOCKET_API_URL
+        fromService:
+          name: mumaa-socket
+          type: web
+          property: hostport
       - key: NEXTAUTH_SECRET
         generateValue: true
       - key: NEXTAUTH_URL

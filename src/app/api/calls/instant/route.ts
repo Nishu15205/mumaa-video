@@ -130,9 +130,13 @@ export async function POST(req: NextRequest) {
 
     // Notify nanny via socket service HTTP API (real-time ringing)
     try {
-      // SOCKET_API_URL can be full URL (production) or just port (development)
-      const SOCKET_API_PORT = process.env.SOCKET_API_PORT || 3003;
-      const SOCKET_API_URL = process.env.SOCKET_API_URL || `http://localhost:${SOCKET_API_PORT}`;
+      // Resolve socket service URL:
+      // 1. SOCKET_API_URL (explicit server-side var for production)
+      // 2. NEXT_PUBLIC_SOCKET_URL (set by Render fromService, available server-side too)
+      // 3. localhost:3003 (local dev with socket-service running)
+      const SOCKET_API_URL = process.env.SOCKET_API_URL
+        || process.env.NEXT_PUBLIC_SOCKET_URL
+        || `http://localhost:${process.env.SOCKET_API_PORT || 3003}`;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
       await fetch(`${SOCKET_API_URL}/emit`, {

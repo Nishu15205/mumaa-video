@@ -103,8 +103,10 @@ export async function PUT(
 
     // Notify both parties via socket that the call has ended
     try {
-      const SOCKET_API_PORT = process.env.SOCKET_API_PORT || 3003;
-      const socketBase = `http://localhost:${SOCKET_API_PORT}/emit`;
+      const SOCKET_API_URL = process.env.SOCKET_API_URL
+        || process.env.NEXT_PUBLIC_SOCKET_URL
+        || `http://localhost:${process.env.SOCKET_API_PORT || 3003}`;
+      const socketBase = `${SOCKET_API_URL}/emit`;
       const headers = { 'Content-Type': 'application/json', 'Connection': 'close' };
 
       // Fire-and-forget socket notifications to both parent and nanny

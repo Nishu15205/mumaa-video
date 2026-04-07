@@ -96,8 +96,10 @@ export async function PUT(
     // Push real-time socket event to both parties
     if (socketEvent) {
       try {
-        const SOCKET_API_PORT = process.env.SOCKET_API_PORT || 3003;
-        const socketBase = `http://localhost:${SOCKET_API_PORT}/emit`;
+        const SOCKET_API_URL = process.env.SOCKET_API_URL
+          || process.env.NEXT_PUBLIC_SOCKET_URL
+          || `http://localhost:${process.env.SOCKET_API_PORT || 3003}`;
+        const socketBase = `${SOCKET_API_URL}/emit`;
         const headers = { 'Content-Type': 'application/json', 'Connection': 'close' };
 
         const parentData = {
