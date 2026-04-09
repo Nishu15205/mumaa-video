@@ -1,0 +1,1 @@
+{"name":"turn-service","scripts":{"start":"npx tsx index.ts","dev":"bun --hot index.ts"},"dependencies":{"node-turn":"0.0.6","tsx":"^4.21.0"}}

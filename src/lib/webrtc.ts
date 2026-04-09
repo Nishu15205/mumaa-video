@@ -11,6 +11,7 @@
  * For production deployment on Render:
  * - Set SOCKET_API_URL env var on mumaa-web (server-side, no NEXT_PUBLIC_ needed)
  * - Set TURN_URL, TURN_USERNAME, TURN_CREDENTIAL env vars on mumaa-web
+ * - OR deploy the bundled turn-service mini-service
  *
  * Without TURN: STUN works when both users have favorable NAT
  * With TURN: Works on ALL networks including strict mobile NAT
@@ -40,6 +41,64 @@ async function fetchTurnConfig(): Promise<{ turnUrl: string; turnUsername: strin
   return { turnUrl: '', turnUsername: '', turnCredential: '' };
 }
 
+/**
+ * Wait for ICE gathering to complete on a peer connection.
+ * Returns the complete local description with all candidates embedded.
+ * Times out after `timeoutMs` and returns whatever was gathered so far.
+ *
+ * This is critical for cross-network calls: embedding all ICE candidates
+ * in the SDP makes the connection much more reliable than relying solely
+ * on trickle ICE (where candidates can be lost due to signaling delays).
+ */
+export function waitForIceGathering(pc: RTCPeerConnection, timeoutMs: number = 3000): Promise<RTCSessionDescriptionInit> {
+  return new Promise((resolve) => {
+    // If gathering already complete, return immediately
+    if (pc.iceGatheringState === 'complete') {
+      resolve(pc.localDescription!);
+      return;
+    }
+
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        console.log('[WebRTC] ICE gathering timed out after', timeoutMs, 'ms — sending with gathered candidates');
+        resolve(pc.localDescription!);
+      }
+    }, timeoutMs);
+
+    pc.onicegatheringstatechange = () => {
+      if (pc.iceGatheringState === 'complete' && !settled) {
+        settled = true;
+        clearTimeout(timeout);
+        console.log('[WebRTC] ICE gathering complete — all candidates embedded in SDP');
+        resolve(pc.localDescription!);
+      }
+    };
+
+    // Also resolve if the connection is already established (early connection)
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'connected' && !settled) {
+        settled = true;
+        clearTimeout(timeout);
+        resolve(pc.localDescription!);
+      }
+    };
+  });
+}
+
+/**
+ * Create a peer connection with relay-only ICE transport policy.
+ * Used as fallback when standard P2P connection fails.
+ */
+export async function getRelayOnlyIceConfig(): Promise<RTCConfiguration> {
+  const config = await getIceServers();
+  return {
+    ...config,
+    iceTransportPolicy: 'relay',
+  };
+}
+
 export async function getIceServers(): Promise<RTCConfiguration> {
   const servers: RTCIceServer[] = [
     // Google STUN servers (free, reliable)
@@ -47,8 +106,13 @@ export async function getIceServers(): Promise<RTCConfiguration> {
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    // Mozilla STUN
     { urls: 'stun:stun.services.mozilla.com:3478' },
+    // STUN Protocol
     { urls: 'stun:stun.stunprotocol.org:3478' },
+    // Twilio STUN
+    { urls: 'stun:global.stun.twilio.com:3478' },
   ]
 
   // Try NEXT_PUBLIC_ vars first (build-time, for local dev)
@@ -69,7 +133,12 @@ export async function getIceServers(): Promise<RTCConfiguration> {
     servers.push({ urls, username: turnUser, credential: turnCred })
     console.log('[WebRTC] TURN server configured:', urls.length, 'URL(s)')
   } else {
-    // Fallback: Metered.ca Open Relay (free, may have rate limits)
+    // ─── Fallback: Free TURN servers ───────────────────────────────────
+    // These work for development / low-traffic use.
+    // For production, always configure your own TURN server.
+    console.log('[WebRTC] No custom TURN configured — using free fallback TURN servers')
+
+    // Metered.ca Open Relay (free community project, may have rate limits)
     const meteredUser = 'openrelayproject'
     const meteredCred = 'openrelayproject'
     servers.push(
@@ -78,9 +147,22 @@ export async function getIceServers(): Promise<RTCConfiguration> {
       { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: meteredUser, credential: meteredCred },
       { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: meteredUser, credential: meteredCred },
     )
+
+    // Additional free TURN servers (backup)
+    servers.push(
+      { urls: 'turn:openrelay.metered.ca:8060', username: meteredUser, credential: meteredCred },
+      { urls: 'turn:openrelay.metered.ca:8060?transport=tcp', username: meteredUser, credential: meteredCred },
+    )
   }
 
-  return { iceServers: servers, iceCandidatePoolSize: 10 }
+  return {
+    iceServers: servers,
+    iceCandidatePoolSize: 10,
+    // Use max-bundle for better performance (multiplex audio+video on one transport)
+    bundlePolicy: 'max-bundle',
+    // Use balanced for better ICE candidate gathering
+    iceCandidatePoolSize: 10,
+  }
 }
 
 /**

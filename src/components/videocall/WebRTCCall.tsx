@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app-store'
-import { getIceServers } from '@/lib/webrtc'
+import { getIceServers, waitForIceGathering, getRelayOnlyIceConfig } from '@/lib/webrtc'
 
 interface WebRTCCallProps {
   callId: string
@@ -136,6 +136,8 @@ export function WebRTCCall({
   const iceBufferRef = useRef<any[]>([])
   /** Debounce timer to prevent camera retry spam */
   const cameraRetryTimerRef = useRef<NodeJS.Timeout | null>(null)
+  /** Track if relay-only fallback has been attempted (persists across PC recreations) */
+  const relayFallbackAttemptedRef = useRef(false)
 
   const [isAudioEnabled, setIsAudioEnabled] = useState(true)
   const [isVideoEnabled, setIsVideoEnabled] = useState(true)
@@ -220,9 +222,141 @@ export function WebRTCCall({
     }
   }, [callId, otherUserId, socketRef])
 
-  // Monitor connection state with ICE restart
+  // Monitor connection state with ICE restart + relay-only fallback
+  // Uses refs for flags to avoid stale closures
   const setupConnectionMonitoring = useCallback((pc: RTCPeerConnection) => {
     let iceRestartAttempted = false
+
+    const handleFailure = async () => {
+      if (cleanupCalledRef.current) return
+
+      if (!iceRestartAttempted) {
+        iceRestartAttempted = true
+        log('Connection FAILED - attempting ICE restart...')
+        try {
+          pc.restartIce()
+          log('ICE restart initiated')
+        } catch {
+          log('ICE restart not supported, trying relay-only fallback...')
+          if (!relayFallbackAttemptedRef.current) {
+            relayFallbackAttemptedRef.current = true
+            await tryRelayFallback()
+          } else {
+            setCallStatus('failed')
+            onError('Connection failed. Please try again.')
+          }
+        }
+      } else if (!relayFallbackAttemptedRef.current) {
+        log('ICE restart did not help - trying relay-only fallback...')
+        relayFallbackAttemptedRef.current = true
+        await tryRelayFallback()
+      } else {
+        log('Connection FAILED after ICE restart + relay fallback')
+        setCallStatus('failed')
+        onError('Connection failed. Check your network and try again.')
+      }
+    }
+
+    // Relay-only fallback: creates a new peer connection forced through TURN relay
+    const tryRelayFallback = async () => {
+      try {
+        log('Creating relay-only peer connection as fallback...')
+        const relayConfig = await getRelayOnlyIceConfig()
+        const oldPc = pcRef.current
+        const stream = localStreamRef.current
+
+        // Close old peer connection
+        if (oldPc) {
+          oldPc.ontrack = null
+          oldPc.onicecandidate = null
+          oldPc.onconnectionstatechange = null
+          oldPc.oniceconnectionstatechange = null
+          oldPc.close()
+        }
+
+        const newPc = new RTCPeerConnection(relayConfig)
+        pcRef.current = newPc
+        newPc.ontrack = handleTrack
+        newPc.onicecandidate = sendICECandidate
+
+        // Log ICE gathering state
+        newPc.onicegatheringstatechange = () => {
+          log(`Relay ICE gathering state: ${newPc.iceGatheringState}`)
+        }
+
+        if (stream) {
+          stream.getTracks().forEach((t) => newPc.addTrack(t, stream))
+        }
+
+        // Setup monitoring on new PC — reset ICE restart flag since it's a new connection
+        let newIceRestarted = false
+        newPc.onconnectionstatechange = () => {
+          const state = newPc.connectionState
+          log(`Relay connection state: ${state}`)
+          if (state === 'connected') {
+            callStartTimeRef.current = new Date()
+            setCallStatus('connected')
+            onConnected()
+          } else if (state === 'failed') {
+            if (!newIceRestarted) {
+              newIceRestarted = true
+              try { newPc.restartIce() } catch { /* give up */ }
+            } else {
+              setCallStatus('failed')
+              onError('Connection failed even with relay. Please check your network.')
+            }
+          } else if (state === 'disconnected') {
+            setTimeout(() => {
+              if (newPc.connectionState === 'disconnected') {
+                const duration = callStartTimeRef.current
+                  ? Math.floor((Date.now() - callStartTimeRef.current.getTime()) / 1000)
+                  : 0
+                if (duration > 0) onDisconnected(duration)
+                else {
+                  setCallStatus('failed')
+                  onError('Connection lost. Please try again.')
+                }
+              }
+            }, 5000)
+          }
+        }
+        newPc.oniceconnectionstatechange = () => {
+          const iceState = newPc.iceConnectionState
+          log(`Relay ICE state: ${iceState}`)
+          if (iceState === 'failed') {
+            if (!newIceRestarted) {
+              newIceRestarted = true
+              try { newPc.restartIce() } catch { /* give up */ }
+            } else {
+              setCallStatus('failed')
+              onError('Connection failed even with relay. Please check your network.')
+            }
+          } else if (iceState === 'connected' || iceState === 'completed') {
+            log('Relay ICE connection established!')
+          }
+        }
+
+        if (isCaller) {
+          const offer = await newPc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
+          await newPc.setLocalDescription(offer)
+          log('Relay: Waiting for ICE gathering...')
+          const completeOffer = await waitForIceGathering(newPc, 5000)
+          if (socketRef.current?.connected) {
+            socketRef.current.emit('webrtc-offer', {
+              callId,
+              toUserId: otherUserId,
+              sdp: completeOffer.toJSON(),
+            })
+            log('Relay: Offer sent (relay-only)')
+          }
+        }
+        // For callee, the offer handler will use the new PC when next offer arrives
+      } catch (err) {
+        log('Relay fallback failed:', err)
+        setCallStatus('failed')
+        onError('Connection failed. Please try again.')
+      }
+    }
 
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState
@@ -232,22 +366,7 @@ export function WebRTCCall({
         setCallStatus('connected')
         onConnected()
       } else if (state === 'failed') {
-        if (!iceRestartAttempted) {
-          iceRestartAttempted = true
-          log('Connection FAILED - attempting ICE restart...')
-          try {
-            pc.restartIce()
-            log('ICE restart initiated')
-          } catch {
-            log('ICE restart not supported, giving up')
-            setCallStatus('failed')
-            onError('Connection failed. Please try again.')
-          }
-        } else {
-          log('Connection FAILED after ICE restart attempt')
-          setCallStatus('failed')
-          onError('Connection failed. Please try again.')
-        }
+        handleFailure()
       } else if (state === 'disconnected') {
         log('Connection disconnected - waiting for recovery...')
         setTimeout(() => {
@@ -258,8 +377,7 @@ export function WebRTCCall({
             if (duration > 0) {
               onDisconnected(duration)
             } else {
-              setCallStatus('failed')
-              onError('Connection lost. Please try again.')
+              handleFailure()
             }
           }
         }, 5000)
@@ -270,27 +388,12 @@ export function WebRTCCall({
       const iceState = pc.iceConnectionState
       log(`ICE state: ${iceState}`)
       if (iceState === 'failed') {
-        if (!iceRestartAttempted) {
-          iceRestartAttempted = true
-          log('ICE FAILED - attempting ICE restart...')
-          try {
-            pc.restartIce()
-            log('ICE restart initiated')
-          } catch {
-            log('ICE restart not supported')
-            setCallStatus('failed')
-            onError('Could not establish connection. Please try again.')
-          }
-        } else {
-          log('ICE FAILED after restart attempt')
-          setCallStatus('failed')
-          onError('Could not establish connection. Please try again.')
-        }
+        handleFailure()
       } else if (iceState === 'connected' || iceState === 'completed') {
         log('ICE connection established!')
       }
     }
-  }, [onConnected, onDisconnected, onError])
+  }, [onConnected, onDisconnected, onError, callId, otherUserId, socketRef, handleTrack, sendICECandidate, isCaller])
 
   // Create peer connection (async because getIceServers fetches TURN config from API)
   const createPC = useCallback(async () => {
@@ -424,15 +527,20 @@ export function WebRTCCall({
       await pc.setLocalDescription(offer)
       log('Local description set (offer)')
 
+      // ─── CRITICAL: Wait for ICE gathering before sending offer ───
+      // This embeds ALL ICE candidates (host, srflx, relay) into the SDP.
+      // Without this, cross-network calls fail because trickle ICE candidates
+      // can be lost due to signaling delays or strict NATs.
+      // Timeout of 3s ensures we don't block forever on slow TURN servers.
+      log('Waiting for ICE gathering to complete (max 3s)...')
+      const completeOffer = await waitForIceGathering(pc, 3000)
+
       socketRef.current.emit('webrtc-offer', {
         callId,
         toUserId: otherUserId,
-        sdp: pc.localDescription?.toJSON(),
+        sdp: completeOffer.toJSON(),
       })
-      log(`Offer sent to ${otherUserId.slice(0, 8)}...`)
-
-      // If ICE gathering already completed, we might have all candidates
-      // The other side should still receive them via trickle
+      log(`Offer sent to ${otherUserId.slice(0, 8)}... (ICE candidates embedded)`)
     } catch (err: any) {
       log(`Start call failed: ${err.message}`)
       onError(err?.message || 'Failed to start video call. Please allow camera/microphone access.')
@@ -475,13 +583,18 @@ export function WebRTCCall({
           await pc.setLocalDescription(answer)
           log('Local description set (answer)')
 
+          // ─── CRITICAL: Wait for ICE gathering before sending answer ───
+          // Same as offer: embed all candidates for cross-network reliability
+          log('Waiting for ICE gathering to complete (max 3s)...')
+          const completeAnswer = await waitForIceGathering(pc, 3000)
+
           if (socketRef.current?.connected) {
             socketRef.current.emit('webrtc-answer', {
               callId,
               toUserId: otherUserId,
-              sdp: pc.localDescription?.toJSON(),
+              sdp: completeAnswer.toJSON(),
             })
-            log('Answer sent back')
+            log('Answer sent back (ICE candidates embedded)')
           } else {
             log('ERROR: Socket disconnected before answer could be sent')
           }
