@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { emitToUser } from '@/lib/socket-api';
 
 export async function PUT(
   req: NextRequest,
@@ -95,33 +96,23 @@ export async function PUT(
 
     // Push real-time socket event to both parties
     if (socketEvent) {
-      try {
-        const SOCKET_API_URL = process.env.SOCKET_API_URL
-          || process.env.NEXT_PUBLIC_SOCKET_URL
-          || `http://localhost:${process.env.SOCKET_API_PORT || 3003}`;
-        const socketBase = `${SOCKET_API_URL}/emit`;
-        const headers = { 'Content-Type': 'application/json', 'Connection': 'close' };
+      const parentData = {
+        callId: id,
+        ...(socketEvent === 'call-accepted' ? { accepterId: updatedCall.nannyId, roomName: updatedCall.callRoomId } : {}),
+        ...(socketEvent === 'call-rejected' ? { rejecterId: updatedCall.nannyId } : {}),
+        ...(socketEvent === 'call-ended' ? { enderId: updatedCall.parentId, reason: 'status_update' } : {}),
+      };
 
-        const parentData = {
-          callId: id,
-          ...(socketEvent === 'call-accepted' ? { accepterId: updatedCall.nannyId, roomName: updatedCall.callRoomId } : {}),
-          ...(socketEvent === 'call-rejected' ? { rejecterId: updatedCall.nannyId } : {}),
-          ...(socketEvent === 'call-ended' ? { enderId: updatedCall.parentId, reason: 'status_update' } : {}),
-        };
+      const nannyData = {
+        callId: id,
+        ...(socketEvent === 'call-accepted' ? { accepterId: updatedCall.parentId, roomName: updatedCall.callRoomId } : {}),
+        ...(socketEvent === 'call-rejected' ? { rejecterId: updatedCall.parentId } : {}),
+        ...(socketEvent === 'call-ended' ? { enderId: updatedCall.nannyId, reason: 'status_update' } : {}),
+      };
 
-        const nannyData = {
-          callId: id,
-          ...(socketEvent === 'call-accepted' ? { accepterId: updatedCall.parentId, roomName: updatedCall.callRoomId } : {}),
-          ...(socketEvent === 'call-rejected' ? { rejecterId: updatedCall.parentId } : {}),
-          ...(socketEvent === 'call-ended' ? { enderId: updatedCall.nannyId, reason: 'status_update' } : {}),
-        };
-
-        // Notify both parties (fire and forget, don't block response)
-        fetch(socketBase, { method: 'POST', headers, body: JSON.stringify({ toUserId: updatedCall.parentId, event: socketEvent, data: parentData }) }).catch(() => {});
-        fetch(socketBase, { method: 'POST', headers, body: JSON.stringify({ toUserId: updatedCall.nannyId, event: socketEvent, data: nannyData }) }).catch(() => {});
-      } catch (socketErr) {
-        console.warn('[Call Status] Socket notification failed:', socketErr);
-      }
+      // Notify both parties (fire and forget, don't block response)
+      emitToUser(updatedCall.parentId, socketEvent, parentData).catch(() => {});
+      emitToUser(updatedCall.nannyId, socketEvent, nannyData).catch(() => {});
     }
 
     return NextResponse.json({

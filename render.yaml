@@ -43,11 +43,11 @@ services:
           property: hostport
       - key: JWT_SECRET
         generateValue: true
-      - key: NEXT_PUBLIC_TURN_URL
+      - key: TURN_URL
         sync: false
-      - key: NEXT_PUBLIC_TURN_USERNAME
+      - key: TURN_USERNAME
         sync: false
-      - key: NEXT_PUBLIC_TURN_CREDENTIAL
+      - key: TURN_CREDENTIAL
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false

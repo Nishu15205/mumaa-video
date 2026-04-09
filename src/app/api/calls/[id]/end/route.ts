@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { emitToUser } from '@/lib/socket-api';
 
 export async function PUT(
   req: NextRequest,
@@ -102,25 +103,8 @@ export async function PUT(
     });
 
     // Notify both parties via socket that the call has ended
-    try {
-      const SOCKET_API_URL = process.env.SOCKET_API_URL
-        || process.env.NEXT_PUBLIC_SOCKET_URL
-        || `http://localhost:${process.env.SOCKET_API_PORT || 3003}`;
-      const socketBase = `${SOCKET_API_URL}/emit`;
-      const headers = { 'Content-Type': 'application/json', 'Connection': 'close' };
-
-      // Fire-and-forget socket notifications to both parent and nanny
-      fetch(socketBase, {
-        method: 'POST', headers,
-        body: JSON.stringify({ toUserId: call.parentId, event: 'call-ended', data: { callId: id, reason: 'ended' } }),
-      }).catch(() => {});
-      fetch(socketBase, {
-        method: 'POST', headers,
-        body: JSON.stringify({ toUserId: call.nannyId, event: 'call-ended', data: { callId: id, reason: 'ended' } }),
-      }).catch(() => {});
-    } catch (socketErr) {
-      console.warn('[End Call] Socket notification failed:', socketErr);
-    }
+    emitToUser(call.parentId, 'call-ended', { callId: id, reason: 'ended' }).catch(() => {});
+    emitToUser(call.nannyId, 'call-ended', { callId: id, reason: 'ended' }).catch(() => {});
 
     return NextResponse.json({
       call: updatedCall,

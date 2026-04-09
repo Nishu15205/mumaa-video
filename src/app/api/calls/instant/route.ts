@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '@/lib/db';
+import { emitToUser } from '@/lib/socket-api';
 
 const BASIC_DAILY_LIMIT = 5;
 const BASIC_CALL_MAX_SECONDS = 15 * 60; // 15 minutes
@@ -129,36 +130,17 @@ export async function POST(req: NextRequest) {
     });
 
     // Notify nanny via socket service HTTP API (real-time ringing)
-    try {
-      // Resolve socket service URL:
-      // 1. SOCKET_API_URL (explicit server-side var for production)
-      // 2. NEXT_PUBLIC_SOCKET_URL (set by Render fromService, available server-side too)
-      // 3. localhost:3003 (local dev with socket-service running)
-      const SOCKET_API_URL = process.env.SOCKET_API_URL
-        || process.env.NEXT_PUBLIC_SOCKET_URL
-        || `http://localhost:${process.env.SOCKET_API_PORT || 3003}`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      await fetch(`${SOCKET_API_URL}/emit`, {
-        method: 'POST',
-        signal: controller.signal,
-        headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
-        body: JSON.stringify({
-          toUserId: nannyId,
-          event: 'incoming-call',
-          data: {
-            callId: call.id,
-            callerId: parentId,
-            callerName: parent.name,
-            callerAvatar: parent.avatar,
-            callType: 'INSTANT',
-            callRoomId: call.callRoomId,
-          },
-        }),
-      });
-      clearTimeout(timeout);
-    } catch (socketErr) {
-      console.warn('[Instant Call] Could not notify via socket, falling back to DB notification only:', socketErr);
+    const emitResult = await emitToUser(nannyId, 'incoming-call', {
+      callId: call.id,
+      callerId: parentId,
+      callerName: parent.name,
+      callerAvatar: parent.avatar,
+      callType: 'INSTANT',
+      callRoomId: call.callRoomId,
+    });
+
+    if (!emitResult.success || !emitResult.delivered) {
+      console.warn(`[Instant Call] Socket emit ${!emitResult.success ? 'failed' : `not delivered (${emitResult.reason || 'unknown'})`} to nanny ${nannyId.slice(0, 8)} — nanny may be offline`);
     }
 
     return NextResponse.json(
