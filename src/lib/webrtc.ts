@@ -32,10 +32,15 @@ async function fetchTurnConfig(): Promise<{ turnUrl: string; turnUsername: strin
         turnUsername: data.turnUsername || '',
         turnCredential: data.turnCredential || '',
       };
+      if (data.turnUrl) {
+        console.log('[WebRTC] TURN config loaded from /api/config:', data.turnUrl.substring(0, 50) + '...');
+      } else {
+        console.warn('[WebRTC] /api/config returned empty TURN credentials — cross-network calls may fail');
+      }
       return cachedConfig;
     }
-  } catch {
-    // fallback to empty
+  } catch (err) {
+    console.warn('[WebRTC] Failed to fetch /api/config:', err);
   }
 
   return { turnUrl: '', turnUsername: '', turnCredential: '' };
@@ -50,7 +55,7 @@ async function fetchTurnConfig(): Promise<{ turnUrl: string; turnUsername: strin
  * in the SDP makes the connection much more reliable than relying solely
  * on trickle ICE (where candidates can be lost due to signaling delays).
  */
-export function waitForIceGathering(pc: RTCPeerConnection, timeoutMs: number = 3000): Promise<RTCSessionDescriptionInit> {
+export function waitForIceGathering(pc: RTCPeerConnection, timeoutMs: number = 5000): Promise<RTCSessionDescriptionInit> {
   return new Promise((resolve) => {
     // If gathering already complete, return immediately
     if (pc.iceGatheringState === 'complete') {
@@ -85,6 +90,31 @@ export function waitForIceGathering(pc: RTCPeerConnection, timeoutMs: number = 3
       }
     };
   });
+}
+
+/**
+ * Log ICE candidate types for debugging TURN connectivity.
+ * Call this after ICE gathering to see which candidate types were found.
+ */
+export function logIceCandidateTypes(pc: RTCPeerConnection): void {
+  const stats = pc.getStats()
+  stats.then(report => {
+    let hostCount = 0, srflxCount = 0, relayCount = 0, prflxCount = 0
+    report.forEach((entry) => {
+      if (entry.type === 'local-candidate' || entry.type === 'candidate-pair') {
+        if (entry.candidateType === 'host') hostCount++
+        else if (entry.candidateType === 'srflx') srflxCount++
+        else if (entry.candidateType === 'relay') relayCount++
+        else if (entry.candidateType === 'prflx') prflxCount++
+      }
+    })
+    console.log(`[WebRTC] ICE candidates gathered — host: ${hostCount}, srflx: ${srflxCount}, relay: ${relayCount}, prflx: ${prflxCount}`)
+    if (relayCount === 0) {
+      console.warn('[WebRTC] ⚠️ NO relay candidates found! TURN server may be unreachable or credentials are wrong. Cross-network calls will likely fail.')
+    } else {
+      console.log('[WebRTC] ✓ Relay candidates found — TURN server is working')
+    }
+  }).catch(() => {})
 }
 
 /**
@@ -129,16 +159,18 @@ export async function getIceServers(): Promise<RTCConfiguration> {
   }
 
   if (turnUrl && turnUser && turnCred) {
+    // User's custom TURN server (configured in env vars) — highest priority
     const urls = turnUrl.split(',').map(u => u.trim()).filter(Boolean)
     servers.push({ urls, username: turnUser, credential: turnCred })
-    console.log('[WebRTC] TURN server configured:', urls.length, 'URL(s)')
+    console.log('[WebRTC] Custom TURN configured:', urls.length, 'URL(s):', urls.map(u => u.replace(/\/\/.*@/, '//***@')).join(', '))
   } else {
     // ─── Fallback: Free TURN servers ───────────────────────────────────
-    // These work for development / low-traffic use.
-    // For production, always configure your own TURN server.
-    console.log('[WebRTC] No custom TURN configured — using free fallback TURN servers')
+    // WARNING: These free TURN servers are community projects and may be
+    // unreliable, rate-limited, or temporarily down.
+    // For production, ALWAYS configure your own TURN credentials.
+    console.warn('[WebRTC] No custom TURN configured — using free fallback TURN servers (may be unreliable)')
 
-    // Metered.ca Open Relay (free community project, may have rate limits)
+    // Metered.ca Open Relay (free community project)
     const meteredUser = 'openrelayproject'
     const meteredCred = 'openrelayproject'
     servers.push(
@@ -146,22 +178,17 @@ export async function getIceServers(): Promise<RTCConfiguration> {
       { urls: 'turn:openrelay.metered.ca:443', username: meteredUser, credential: meteredCred },
       { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: meteredUser, credential: meteredCred },
       { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: meteredUser, credential: meteredCred },
-    )
-
-    // Additional free TURN servers (backup)
-    servers.push(
       { urls: 'turn:openrelay.metered.ca:8060', username: meteredUser, credential: meteredCred },
       { urls: 'turn:openrelay.metered.ca:8060?transport=tcp', username: meteredUser, credential: meteredCred },
     )
+
+    console.log('[WebRTC] Total ICE servers:', servers.length, '(STUN + TURN fallbacks)')
   }
 
   return {
     iceServers: servers,
     iceCandidatePoolSize: 10,
-    // Use max-bundle for better performance (multiplex audio+video on one transport)
     bundlePolicy: 'max-bundle',
-    // Use balanced for better ICE candidate gathering
-    iceCandidatePoolSize: 10,
   }
 }
 

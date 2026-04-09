@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app-store'
-import { getIceServers, waitForIceGathering, getRelayOnlyIceConfig } from '@/lib/webrtc'
+import { getIceServers, waitForIceGathering, getRelayOnlyIceConfig, logIceCandidateTypes } from '@/lib/webrtc'
 
 interface WebRTCCallProps {
   callId: string
@@ -531,9 +531,11 @@ export function WebRTCCall({
       // This embeds ALL ICE candidates (host, srflx, relay) into the SDP.
       // Without this, cross-network calls fail because trickle ICE candidates
       // can be lost due to signaling delays or strict NATs.
-      // Timeout of 3s ensures we don't block forever on slow TURN servers.
-      log('Waiting for ICE gathering to complete (max 3s)...')
-      const completeOffer = await waitForIceGathering(pc, 3000)
+      log('Waiting for ICE gathering to complete (max 5s)...')
+      const completeOffer = await waitForIceGathering(pc, 5000)
+
+      // Diagnose ICE candidate types — helps debug TURN connectivity
+      logIceCandidateTypes(pc)
 
       socketRef.current.emit('webrtc-offer', {
         callId,
@@ -585,8 +587,11 @@ export function WebRTCCall({
 
           // ─── CRITICAL: Wait for ICE gathering before sending answer ───
           // Same as offer: embed all candidates for cross-network reliability
-          log('Waiting for ICE gathering to complete (max 3s)...')
-          const completeAnswer = await waitForIceGathering(pc, 3000)
+          log('Waiting for ICE gathering to complete (max 5s)...')
+          const completeAnswer = await waitForIceGathering(pc, 5000)
+
+          // Diagnose ICE candidate types
+          logIceCandidateTypes(pc)
 
           if (socketRef.current?.connected) {
             socketRef.current.emit('webrtc-answer', {

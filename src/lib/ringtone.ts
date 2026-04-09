@@ -4,6 +4,8 @@
 let audioContext: AudioContext | null = null;
 let ringInterval: ReturnType<typeof setInterval> | null = null;
 let isPlaying = false;
+let vibrateInterval: ReturnType<typeof setInterval> | null = null;
+let originalTitle = '';
 
 /**
  * Ensure AudioContext is unlocked by a user gesture.
@@ -89,11 +91,113 @@ function playSingleRing(ctx: AudioContext, volume: number = 0.3) {
 }
 
 /**
+ * Start mobile vibration pattern for incoming calls.
+ * Uses Vibration API — supported on most Android browsers.
+ */
+function startVibration() {
+  if (typeof navigator === 'undefined' || !navigator.vibrate) return;
+  try {
+    // Vibrate pattern: 200ms on, 200ms off, repeating
+    navigator.vibrate([200, 200]);
+    // Keep vibrating until stopped
+    vibrateInterval = setInterval(() => {
+      navigator.vibrate([200, 200]);
+    }, 2000);
+  } catch {
+    // Vibration not supported
+  }
+}
+
+/**
+ * Stop mobile vibration.
+ */
+function stopVibration() {
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    try {
+      navigator.vibrate(0); // Stop vibration
+    } catch {
+      // ignore
+    }
+  }
+  if (vibrateInterval) {
+    clearInterval(vibrateInterval);
+    vibrateInterval = null;
+  }
+}
+
+/**
+ * Update document title to flash "📞 Incoming Call..." so user
+ * notices even if the tab is in the background.
+ */
+function startTitleFlash() {
+  if (typeof document === 'undefined') return;
+  originalTitle = document.title;
+  let visible = true;
+  const flashInterval = setInterval(() => {
+    if (!isPlaying) {
+      clearInterval(flashInterval);
+      return;
+    }
+    document.title = visible ? '📞 Incoming Call...' : originalTitle || 'Mumaa';
+    visible = !visible;
+  }, 1000);
+}
+
+/**
+ * Restore original document title.
+ */
+function restoreTitle() {
+  if (typeof document === 'undefined') return;
+  document.title = originalTitle || 'Mumaa';
+}
+
+/**
+ * Request browser notification permission and send a notification
+ * for incoming calls (works even when tab is in background).
+ */
+function sendCallNotification() {
+  if (typeof Notification === 'undefined') return;
+  try {
+    if (Notification.permission === 'granted') {
+      new Notification('📞 Incoming Video Call', {
+        body: 'Someone is calling you. Tap to accept.',
+        icon: '/logo.svg',
+        tag: 'incoming-call',
+        requireInteraction: true,
+      });
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then((perm) => {
+        if (perm === 'granted') {
+          new Notification('📞 Incoming Video Call', {
+            body: 'Someone is calling you. Tap to accept.',
+            icon: '/logo.svg',
+            tag: 'incoming-call',
+            requireInteraction: true,
+          });
+        }
+      }).catch(() => {});
+    }
+  } catch {
+    // Notification not available
+  }
+}
+
+/**
  * Start playing ringtone in a loop (every 1.5 seconds)
+ * Also: vibrates mobile, flashes tab title, sends browser notification
  */
 export function startRingtone() {
   if (isPlaying) return;
   isPlaying = true;
+
+  // Vibrate mobile device
+  startVibration();
+
+  // Flash document title for background tab notification
+  startTitleFlash();
+
+  // Send browser notification (for background tabs)
+  sendCallNotification();
 
   try {
     const ctx = getAudioContext();
@@ -127,7 +231,7 @@ export function startRingtone() {
 }
 
 /**
- * Stop the ringtone
+ * Stop the ringtone (and vibration, title flash)
  */
 export function stopRingtone() {
   isPlaying = false;
@@ -135,6 +239,10 @@ export function stopRingtone() {
     clearInterval(ringInterval);
     ringInterval = null;
   }
+  // Stop vibration
+  stopVibration();
+  // Restore document title
+  restoreTitle();
 }
 
 /**
@@ -157,5 +265,15 @@ export function playNotificationBeep() {
     osc.stop(now + 0.3);
   } catch {
     // Web Audio API not available
+  }
+}
+
+/**
+ * Pre-request notification permission (call this on page load)
+ */
+export function requestNotificationPermission() {
+  if (typeof Notification === 'undefined') return;
+  if (Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
   }
 }

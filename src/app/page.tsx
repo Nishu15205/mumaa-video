@@ -35,6 +35,7 @@ import AdminPayments from '@/components/dashboard/admin/AdminPayments';
 import Settings from '@/components/dashboard/Settings';
 import { VideoCallScreen } from '@/components/videocall/VideoCallScreen';
 import { IncomingCallDialog } from '@/components/videocall/IncomingCallDialog';
+import { requestNotificationPermission } from '@/lib/ringtone';
 import LegalPages from '@/components/common/LegalPages';
 import ApplyAsNanny from '@/components/common/ApplyAsNanny';
 import NannySetup from '@/components/common/NannySetup';
@@ -166,6 +167,8 @@ export default function Home() {
     setMounted(true);
     // Immediately force loading false - the store will rehydrate from localStorage
     useAuthStore.setState({ isLoading: false });
+    // Pre-request notification permission for incoming call alerts
+    requestNotificationPermission();
   }, []);
 
   // Sync activeTab with dashboardPage
