@@ -4,7 +4,6 @@
 let audioContext: AudioContext | null = null;
 let ringInterval: ReturnType<typeof setInterval> | null = null;
 let isPlaying = false;
-let vibrateInterval: ReturnType<typeof setInterval> | null = null;
 let originalTitle = '';
 
 /**
@@ -91,41 +90,6 @@ function playSingleRing(ctx: AudioContext, volume: number = 0.3) {
 }
 
 /**
- * Start mobile vibration pattern for incoming calls.
- * Uses Vibration API — supported on most Android browsers.
- */
-function startVibration() {
-  if (typeof navigator === 'undefined' || !navigator.vibrate) return;
-  try {
-    // Vibrate pattern: 200ms on, 200ms off, repeating
-    navigator.vibrate([200, 200]);
-    // Keep vibrating until stopped
-    vibrateInterval = setInterval(() => {
-      navigator.vibrate([200, 200]);
-    }, 2000);
-  } catch {
-    // Vibration not supported
-  }
-}
-
-/**
- * Stop mobile vibration.
- */
-function stopVibration() {
-  if (typeof navigator !== 'undefined' && navigator.vibrate) {
-    try {
-      navigator.vibrate(0); // Stop vibration
-    } catch {
-      // ignore
-    }
-  }
-  if (vibrateInterval) {
-    clearInterval(vibrateInterval);
-    vibrateInterval = null;
-  }
-}
-
-/**
  * Update document title to flash "📞 Incoming Call..." so user
  * notices even if the tab is in the background.
  */
@@ -183,15 +147,12 @@ function sendCallNotification() {
 }
 
 /**
- * Start playing ringtone in a loop (every 1.5 seconds)
- * Also: vibrates mobile, flashes tab title, sends browser notification
+ * Start playing ringtone in a loop (every 2 seconds)
+ * Also: flashes tab title, sends browser notification
  */
 export function startRingtone() {
   if (isPlaying) return;
   isPlaying = true;
-
-  // Vibrate mobile device
-  startVibration();
 
   // Flash document title for background tab notification
   startTitleFlash();
@@ -231,7 +192,7 @@ export function startRingtone() {
 }
 
 /**
- * Stop the ringtone (and vibration, title flash)
+ * Stop the ringtone (and restore title)
  */
 export function stopRingtone() {
   isPlaying = false;
@@ -239,8 +200,6 @@ export function stopRingtone() {
     clearInterval(ringInterval);
     ringInterval = null;
   }
-  // Stop vibration
-  stopVibration();
   // Restore document title
   restoreTitle();
 }

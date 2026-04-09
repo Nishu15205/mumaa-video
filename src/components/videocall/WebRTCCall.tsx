@@ -531,8 +531,8 @@ export function WebRTCCall({
       // This embeds ALL ICE candidates (host, srflx, relay) into the SDP.
       // Without this, cross-network calls fail because trickle ICE candidates
       // can be lost due to signaling delays or strict NATs.
-      log('Waiting for ICE gathering to complete (max 5s)...')
-      const completeOffer = await waitForIceGathering(pc, 5000)
+      log('Waiting for ICE gathering to complete (max 3s)...')
+      const completeOffer = await waitForIceGathering(pc, 3000)
 
       // Diagnose ICE candidate types — helps debug TURN connectivity
       logIceCandidateTypes(pc)
@@ -587,8 +587,8 @@ export function WebRTCCall({
 
           // ─── CRITICAL: Wait for ICE gathering before sending answer ───
           // Same as offer: embed all candidates for cross-network reliability
-          log('Waiting for ICE gathering to complete (max 5s)...')
-          const completeAnswer = await waitForIceGathering(pc, 5000)
+          log('Waiting for ICE gathering to complete (max 3s)...')
+          const completeAnswer = await waitForIceGathering(pc, 3000)
 
           // Diagnose ICE candidate types
           logIceCandidateTypes(pc)
@@ -896,8 +896,8 @@ export function WebRTCCall({
         )}
       />
 
-      {/* Remote placeholder */}
-      {!isRemoteVideoPresent && (
+      {/* Remote placeholder — only show when still connecting, hide once connected */}
+      {!isRemoteVideoPresent && callStatus === 'connecting' && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
           <motion.div
             animate={{ scale: [1, 1.03, 1] }}
@@ -908,15 +908,26 @@ export function WebRTCCall({
               <span className="text-4xl font-bold text-white">{getInitials(otherPersonName)}</span>
             </div>
             <p className="text-white/80 text-lg font-medium">{otherPersonName}</p>
-            {callStatus === 'connecting' && (
-              <div className="mt-3 flex items-center justify-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                <p className="text-white/40 text-sm">
-                  {isCaller ? `Connecting to ${otherPersonName}...` : `Waiting for ${otherPersonName} to connect...`}
-                </p>
-              </div>
-            )}
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              <p className="text-white/40 text-sm">
+                {isCaller ? `Connecting to ${otherPersonName}...` : `Waiting for ${otherPersonName} to connect...`}
+              </p>
+            </div>
           </motion.div>
+        </div>
+      )}
+
+      {/* Connected but remote video not yet showing — brief avatar without "connecting" text */}
+      {!isRemoteVideoPresent && callStatus === 'connected' && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+          <div className="text-center">
+            <div className="w-28 h-28 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center mx-auto mb-4">
+              <span className="text-4xl font-bold text-white">{getInitials(otherPersonName)}</span>
+            </div>
+            <p className="text-white/80 text-lg font-medium">{otherPersonName}</p>
+            <p className="text-white/40 text-sm mt-2">Connected — video loading...</p>
+          </div>
         </div>
       )}
 

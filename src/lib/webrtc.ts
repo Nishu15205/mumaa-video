@@ -55,7 +55,7 @@ async function fetchTurnConfig(): Promise<{ turnUrl: string; turnUsername: strin
  * in the SDP makes the connection much more reliable than relying solely
  * on trickle ICE (where candidates can be lost due to signaling delays).
  */
-export function waitForIceGathering(pc: RTCPeerConnection, timeoutMs: number = 5000): Promise<RTCSessionDescriptionInit> {
+export function waitForIceGathering(pc: RTCPeerConnection, timeoutMs: number = 3000): Promise<RTCSessionDescriptionInit> {
   return new Promise((resolve) => {
     // If gathering already complete, return immediately
     if (pc.iceGatheringState === 'complete') {
